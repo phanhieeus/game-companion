@@ -58,15 +58,21 @@ Xây từ trong ra ngoài, để phần đúng-đắn được test trước ph�
 
 ## Progress
 
-- [ ] Scaffold Vite + React + TS
-- [ ] domain: types, scoring, validate
-- [ ] repository: localStorage
-- [ ] tools: hợp đồng 11 hàm
-- [ ] test domain + tools
-- [ ] proxy server + Gemini NLU
-- [ ] voice: STT/TTS wrapper
-- [ ] UI: scoreboard + voice + confirm
-- [ ] Chạy thật một phiên, đo độ chính xác
+- [x] Scaffold Vite + React + TS
+- [x] domain: types, scoring, validate
+- [x] repository: localStorage
+- [x] tools: hợp đồng 11 hàm
+- [x] test domain + tools (41 test pass)
+- [x] proxy server + Gemini NLU
+- [x] voice: STT/TTS wrapper
+- [x] UI: scoreboard + voice + confirm
+- [ ] **Chạy thật một phiên, đo độ chính xác** ← còn lại, cần người thật + micro
+
+Đã verify bằng máy: `npm test` 41 pass, `npm run build` sạch, vite dev serve
+200 và mọi module compile, `/api/health` trả đúng và báo lỗi rõ khi thiếu key.
+
+Chưa verify: toàn bộ luồng giọng nói end-to-end. Cần Chrome + micro + Gemini key
+thật, không tự động hoá được.
 
 ## Decisions
 

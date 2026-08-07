@@ -11,3 +11,6 @@ dist/
 .env
 .env.*
 !.env.example
+
+# Build artifacts
+tsconfig.tsbuildinfo
