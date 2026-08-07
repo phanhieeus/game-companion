@@ -1,0 +1,88 @@
+# Execution Plan: Voice Card Scoring MVP
+
+Date: 2026-08-08
+
+## Status
+
+Active
+
+## Outcome
+
+Một web app chạy trên trình duyệt điện thoại: tạo phiên 4–5 người, nhấn nút nói
+một câu tiếng Việt sau mỗi ván, agent đọc lại xác nhận, ghi điểm đúng, và trả lời
+được câu hỏi "ai đang dẫn". Bảng điểm luôn = tổng các ván hợp lệ.
+
+## Context
+
+- [`docs/product/overview.md`](../../product/overview.md) và các doc cùng thư mục.
+- [`decision 0001`](../../decisions/0001-tool-contracts-forward-compatible-with-plugin-platform.md)
+  — giữ nguyên tên/schema tool.
+- [`decision 0002`](../../decisions/0002-mvp-stack-web-app-free-providers.md)
+  — stack và nhà cung cấp miễn phí.
+
+## Scope
+
+In scope:
+
+- Chế độ `direct` + `zero_sum` (chỉ một chế độ).
+- Xác nhận trước khi ghi, có toggle tắt trong cài đặt.
+- Tool layer đúng tên/schema như `docs/product/tools.md`.
+- Web Speech API cho STT/TTS; Gemini Flash-Lite qua proxy cho intent.
+- Lưu localStorage để mở lại app vẫn còn phiên.
+
+Out of scope:
+
+- Chế độ `rank`, plugin platform, tài khoản/đồng bộ, thống kê nâng cao.
+
+## Approach
+
+Xây từ trong ra ngoài, để phần đúng-đắn được test trước phần khó đo:
+
+1. `domain/` — types + scoring engine thuần (không I/O), validate zero-sum.
+2. `repository/` — interface + localStorage, tách khỏi logic tính điểm.
+3. `tools/` — 11 hàm theo hợp đồng, trả `Result`, có idempotency.
+4. Test vitest cho domain + tools (bất biến: scoreboard = tổng ván recorded).
+5. `nlu/` + proxy server — Gemini function calling ánh xạ vào chính các tool đó.
+6. `voice/` — wrapper Web Speech API (push-to-talk, vi-VN).
+7. `ui/` — bảng điểm responsive + nút Voice + hộp xác nhận.
+
+## Risks And Recovery
+
+- **Rủi ro chính: STT tiếng Việt không đủ chính xác.** Đây là giả định MVP cần
+  đo. Giảm thiểu: zero-sum validate bắt sai tổng; xác nhận trước khi ghi. Nếu
+  không đạt → xem lại lựa chọn STT (decision 0002 follow-up).
+- Quota Gemini 1000 req/ngày: nếu hết, chờ sang ngày hoặc thêm key thứ hai.
+- Safari/iOS hỗ trợ Web Speech API kém: kiểm tra sớm, trước khi xây nhiều UI.
+- Rollback: mọi bước là commit riêng; domain và tools không phụ thuộc voice nên
+  có thể giữ lại kể cả khi đổi hoàn toàn tầng speech.
+
+## Progress
+
+- [ ] Scaffold Vite + React + TS
+- [ ] domain: types, scoring, validate
+- [ ] repository: localStorage
+- [ ] tools: hợp đồng 11 hàm
+- [ ] test domain + tools
+- [ ] proxy server + Gemini NLU
+- [ ] voice: STT/TTS wrapper
+- [ ] UI: scoreboard + voice + confirm
+- [ ] Chạy thật một phiên, đo độ chính xác
+
+## Decisions
+
+- 2026-08-08: Chốt câu hỏi mở 1–3 (direct only, zero-sum, confirm mặc định bật
+  cho tắt được) — xem decision 0002.
+- 2026-08-08: Lưu trữ = localStorage (câu 4). Ngôn ngữ = chỉ tiếng Việt (câu 5).
+  STT/TTS = Web Speech API on-device/browser (câu 6).
+
+## Validation
+
+- Focused proof: vitest trên `domain/` và `tools/` — bất biến scoreboard, validate
+  zero-sum, idempotency của `record_round`.
+- Integration proof: chạy app, nói một câu theo ví dụ D1 trong
+  [`conversation.md`](../../product/conversation.md), xác nhận, kiểm tra bảng điểm.
+- Repository-required checks: `npm test`, `npm run build`.
+
+## Result
+
+Chưa hoàn thành.

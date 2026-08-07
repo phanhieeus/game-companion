@@ -1,3 +1,13 @@
 # Harness core maintenance binary
 scripts/bin/harness
 scripts/bin/harness.exe
+
+# Node
+node_modules/
+dist/
+*.local
+
+# Secrets — Gemini API key lives here, never commit
+.env
+.env.*
+!.env.example
