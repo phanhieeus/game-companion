@@ -10,10 +10,18 @@ files after actual product domains, such as `overview.md`, `billing.md`,
 
 ## Current Product Contract
 
-No consumer-specific product contract is shipped in this generic directory.
-The upstream `repository-harness` contract lives in the root README, current
-workflow and architecture documents, lasting decisions, optional orchestration
-contract, implementation, and executable tests.
+Voice Card Scoring MVP — điều khiển bằng giọng nói để ghi điểm và tra cứu điểm
+cho game đánh bài 4–5 người.
+
+- [`overview.md`](overview.md) — mục tiêu, phạm vi, khái niệm cốt lõi. **Bắt đầu ở đây.**
+- [`scoring.md`](scoring.md) — cấu hình điểm, data model, cách tính scoreboard.
+- [`voice-pipeline.md`](voice-pipeline.md) — state machine của một lượt nói.
+- [`conversation.md`](conversation.md) — intent, trích tham số, xác nhận/làm rõ/sửa lỗi.
+- [`tools.md`](tools.md) — hợp đồng các hàm ghi/tra cứu và mã lỗi.
+- [`open-questions.md`](open-questions.md) — **chưa chốt; đọc trước khi build.**
+
+Bản spec gốc đóng băng làm provenance nằm ở [`SPEC.md`](../../SPEC.md) (v1.1).
+Nó **không phải** operating manual — khi behavior đổi, sửa các file trên.
 
 ## Update Rule
 
