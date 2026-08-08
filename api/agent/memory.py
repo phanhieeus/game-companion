@@ -80,6 +80,49 @@ class FileFactStore:
         )
 
 
+def trim_window(turns: list[AgentMessage]) -> list[AgentMessage]:
+    """Cắt hội thoại về hạn mức mà KHÔNG cắt đôi một cặp gọi tool.
+
+    Gemini đòi hội thoại đúng hình dạng: `functionCall` phải đứng ngay sau lượt
+    người dùng hoặc sau một `functionResponse`; `functionResponse` phải đứng ngay
+    sau `functionCall`. Cắt thẳng `turns[-12:]` có thể để lại một
+    `functionResponse` mồ côi ở đầu, và Gemini từ chối CẢ request với 400 —
+    người dùng thấy "Gemini trả lỗi 400" mà chẳng làm gì sai.
+
+    Lỗi này đã xảy ra thật trên production (11 lần, 2026-08-08). Nó không ngẫu
+    nhiên: nói đủ nhiều trong một phiên là chắc chắn gặp.
+
+    Cách sửa: sau khi cắt, lùi mép trái tới lượt NGƯỜI DÙNG gần nhất — chỉ chỗ đó
+    mới là điểm bắt đầu hợp lệ. Thà mất thêm vài lượt ngữ cảnh còn hơn gửi lên
+    một hội thoại sai hình dạng.
+    """
+    window = turns[-MAX_TURNS:]
+    for index, message in enumerate(window):
+        if message.role == "user":
+            return window[index:]
+    # Cả cửa sổ không còn lượt người dùng nào (chuỗi tool dài hơn hạn mức):
+    # bắt đầu lại từ trống còn hơn gửi lên thứ Gemini chắc chắn từ chối.
+    return []
+
+
+def is_well_formed(turns: list[AgentMessage]) -> bool:
+    """Hội thoại có đúng hình dạng Gemini đòi không.
+
+    Tách riêng để test soi được, và để chỗ nào nghi ngờ thì gọi kiểm tra thay vì
+    đoán bằng mắt.
+    """
+    previous: AgentMessage | None = None
+    for message in turns:
+        if message.role == "tool":
+            if previous is None or previous.role != "model" or previous.call is None:
+                return False
+        if message.role == "model" and message.call is not None:
+            if previous is not None and previous.role not in ("user", "tool"):
+                return False
+        previous = message
+    return True
+
+
 class Memory:
     def __init__(self, store: FactStore | None = None) -> None:
         self.store: FactStore = store or InMemoryFactStore()
@@ -129,7 +172,7 @@ class Memory:
         return self._turns
 
     def append_turn(self, message: AgentMessage) -> None:
-        self._turns = [*self._turns, message][-MAX_TURNS:]
+        self._turns = trim_window([*self._turns, message])
 
     def clear_turns(self) -> None:
         self._turns = []
