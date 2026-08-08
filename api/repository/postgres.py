@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS sessions_created_at ON sessions (created_at DESC);
+-- Tra phiên đang chơi của một thiết bị là truy vấn chạy mỗi lần mở app.
+CREATE INDEX IF NOT EXISTS sessions_device
+    ON sessions ((data ->> 'deviceId'), (data ->> 'status'));
 """
 
 
@@ -73,14 +76,18 @@ class PgSessionRepository:
         with self._conn() as conn:
             conn.execute("DELETE FROM sessions WHERE id = %s", (session_id,))
 
-    def active_session(self) -> Session | None:
+    def active_session(self, device_id: str | None) -> Session | None:
+        if not device_id:
+            return None
         with self._conn() as conn:
             row = conn.execute(
                 """
                 SELECT data FROM sessions
                 WHERE data ->> 'status' = 'active'
+                  AND data ->> 'deviceId' = %s
                 ORDER BY created_at DESC
                 LIMIT 1
-                """
+                """,
+                (device_id,),
             ).fetchone()
         return Session.model_validate(row[0]) if row else None

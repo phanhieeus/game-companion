@@ -293,7 +293,10 @@ export interface paths {
         };
         /**
          * Active
-         * @description Mở lại app là tiếp tục phiên đang chơi — hỏi server, không hỏi máy mình.
+         * @description Phiên đang chơi CỦA THIẾT BỊ NÀY (ADR 15 sửa ở C-019).
+         *
+         *     Thoát giữa chừng rồi mở lại là về đúng ván bài của mình; máy người khác
+         *     không bao giờ thấy phiên này.
          */
         get: operations["active_api_sessions_active_get"];
         put?: never;
@@ -587,6 +590,8 @@ export interface components {
             confirmBeforeCommit: boolean;
             /** Createdat */
             createdAt: string;
+            /** Deviceid */
+            deviceId: string | null;
             /** Endedat */
             endedAt: string | null;
             /** Id */
@@ -677,7 +682,9 @@ export interface operations {
     create_api_sessions_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "x-device-id"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -730,7 +737,9 @@ export interface operations {
     create_api_sessions__post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "x-device-id"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -1518,7 +1527,9 @@ export interface operations {
     active_api_sessions_active_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "x-device-id"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -1549,6 +1560,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

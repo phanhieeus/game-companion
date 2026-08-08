@@ -22,11 +22,13 @@ pytestmark = pytest.mark.skipif(
 )
 
 PLAYERS = [{"name": "Nam"}, {"name": "Hùng"}, {"name": "Lan"}, {"name": "Tú"}]
+#: Phiên thuộc về một thiết bị (C-019) — `active_session` phải biết hỏi giùm ai.
+MAY = "may-1"
 
 
 def seed(repo) -> str:
     tools = create_tools(repo)
-    created = tools.create_session(players=PLAYERS)
+    created = tools.create_session(players=PLAYERS, device_id=MAY)
     sid = created.unwrap()["session_id"]
     ids = [r.playerId for r in created.unwrap()["scoreboard"].rows]
     tools.record_round(
@@ -67,13 +69,13 @@ def test_doc_lai_dung_phien_vua_ghi(repo):
 
 def test_active_session(repo):
     sid = seed(repo)
-    assert repo.active_session().id == sid
+    assert repo.active_session(MAY).id == sid
 
 
 def test_phien_da_ket_thuc_khong_con_la_active(repo):
     sid = seed(repo)
     create_tools(repo).end_session(sid)
-    assert repo.active_session() is None
+    assert repo.active_session(MAY) is None
 
 
 def test_xoa_phien(repo):

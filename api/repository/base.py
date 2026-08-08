@@ -24,5 +24,10 @@ class SessionRepository(Protocol):
 
     def delete(self, session_id: str) -> None: ...
 
-    def active_session(self) -> Session | None:
-        """Phiên đang chơi gần nhất — để mở lại app là tiếp tục được."""
+    def active_session(self, device_id: str | None) -> Session | None:
+        """Phiên đang chơi gần nhất CỦA THIẾT BỊ ĐÓ.
+
+        `device_id=None` → trả None. Thiếu thiết bị mà vẫn trả phiên gần nhất
+        thì người lạ mở URL là rơi vào ván bài của người khác — đúng lỗi C-019
+        sinh ra để sửa.
+        """

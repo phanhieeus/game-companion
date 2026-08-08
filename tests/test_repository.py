@@ -12,12 +12,14 @@ from api.repository.memory import MemorySessionRepository
 from api.tools import create_tools
 
 PLAYERS = [{"name": "Nam"}, {"name": "Hùng"}, {"name": "Lan"}, {"name": "Tú"}]
+#: Phiên thuộc về một thiết bị (C-019) — `active_session` phải biết hỏi giùm ai.
+MAY = "may-1"
 
 
 def seed(repo) -> str:
     """Một phiên có 1 ván, trả về id."""
     tools = create_tools(repo)
-    created = tools.create_session(players=PLAYERS)
+    created = tools.create_session(players=PLAYERS, device_id=MAY)
     sid = created.unwrap()["session_id"]
     ids = [r.playerId for r in created.unwrap()["scoreboard"].rows]
     tools.record_round(
@@ -60,7 +62,7 @@ class TestValueStore:
     def test_active_session_tim_phien_dang_choi(self):
         repo = MemorySessionRepository()
         sid = seed(repo)
-        assert repo.active_session().id == sid
+        assert repo.active_session(MAY).id == sid
 
 
 class TestFileSongSotQuaKhoiDongLai:
@@ -75,7 +77,7 @@ class TestFileSongSotQuaKhoiDongLai:
 
     def test_active_session_sau_khi_bat_lai(self, path):
         sid = seed(FileSessionRepository(path))
-        assert FileSessionRepository(path).active_session().id == sid
+        assert FileSessionRepository(path).active_session(MAY).id == sid
 
     def test_xoa_phien_thi_lan_bat_sau_khong_con(self, path):
         repo = FileSessionRepository(path)

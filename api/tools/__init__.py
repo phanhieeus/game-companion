@@ -212,6 +212,7 @@ class Tools:
         name: str | None = None,
         scoring_config: dict | None = None,
         me_player_name: str | None = None,
+        device_id: str | None = None,
     ) -> Result[dict]:
         count = validate_player_count(len(players))
         if not count.ok:
@@ -245,6 +246,7 @@ class Tools:
             createdAt=_now(),
             mePlayerId=me.id if me else None,
             confirmBeforeCommit=True,
+            deviceId=device_id,
         )
 
         self.repo.save(session)

@@ -5,6 +5,7 @@ import type {
   Session,
   SessionView,
 } from "./model";
+import { deviceId } from "./device";
 
 /**
  * Chỗ DUY NHẤT trong client biết HTTP tồn tại (ADR 13).
@@ -44,12 +45,13 @@ async function call<T>(
   try {
     response = await fetch(`/api${path}`, {
       method: init?.method ?? "GET",
-      ...(init?.body === undefined
-        ? {}
-        : {
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(init.body),
-          }),
+      // Gửi ở MỌI request, không chỉ lúc tạo phiên: server dùng nó để biết
+      // "ván bài của máy này" là ván nào (ADR 15).
+      headers: {
+        "X-Device-Id": deviceId(),
+        ...(init?.body === undefined ? {} : { "content-type": "application/json" }),
+      },
+      ...(init?.body === undefined ? {} : { body: JSON.stringify(init.body) }),
     });
   } catch {
     // Dữ liệu giờ nằm ở server, nên mất mạng là KHÔNG dùng được — phải nói

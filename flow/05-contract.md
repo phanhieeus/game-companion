@@ -44,9 +44,9 @@ shape khác, cả hai đều "xanh".
 
 | Kind | Name | Ghi/Đọc | Request shape | Response shape |
 |---|---|---|---|---|
-| http | `POST /api/sessions` | Ghi | `{ players: {name}[], me_player_name? }` | `{ session: Session }` |
+| http | `POST /api/sessions` | Ghi | header `X-Device-Id?` + `{ players: {name}[], me_player_name? }` | `{ session: Session }` |
 | http | `GET /api/sessions/:id` | Đọc | — | `{ session: Session }` |
-| http | `GET /api/sessions/active` | Đọc | — | `{ session: Session \| null }` |
+| http | `GET /api/sessions/active` | Đọc | header `X-Device-Id?` | `{ session: Session \| null }` |
 | http | `POST /api/sessions/:id/rounds` | Ghi | `{ entries: {playerId, delta}[], client_request_id? }` | `{ session, scoreboard }` |
 | http | `PATCH /api/sessions/:id/rounds/:roundId` | Ghi | `{ entries: {playerId, delta}[] }` | `{ session, scoreboard }` |
 | http | `DELETE /api/sessions/:id/rounds/:roundId` | Ghi | — | `{ session, scoreboard }` |
@@ -62,6 +62,13 @@ shape khác, cả hai đều "xanh".
 Lỗi dùng chung một dạng: `{ error: { code, message }, retryable }` — `code` lấy
 nguyên từ tool layer (`ROUND_NOT_ZERO_SUM`…) nên UI phân biệt được lỗi luật chơi
 với lỗi hạ tầng.
+
+**`X-Device-Id` — thiết bị, KHÔNG phải danh tính** (thêm 2026-08-08, C-019; ADR 15).
+Client sinh một UUID, lưu localStorage, gửi kèm MỌI request. `POST /api/sessions`
+ghi nó vào `Session.deviceId`; `GET /api/sessions/active` chỉ trả phiên của đúng
+thiết bị đó. Thiếu header → `{ session: null }` (thiết bị lạ không được thấy ván
+bài của người khác), nhưng vẫn tạo phiên mới được. Phiên chỉ rời khỏi `active`
+khi `POST /api/sessions/:id/end` — đóng tab hay hết pin thì mở lại vẫn đúng ván cũ.
 
 **Chốt HITL nằm ở SERVER**: `/agent` trả `outcome.type === "confirm"` và server
 giữ lời gọi đang chờ của phiên đó cho tới khi `/agent/confirm` tới. Client không

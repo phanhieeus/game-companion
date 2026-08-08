@@ -8,6 +8,7 @@ duyệt (decision 0002).
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -40,11 +41,11 @@ if DATABASE_URL:
 
     repo = PgSessionRepository(DATABASE_URL)
     fact_store = PgFactStore(DATABASE_URL)
-    print("[api] kho: Postgres", flush=True)
+    print("[api] kho: Postgres", file=sys.stderr, flush=True)
 else:
     repo = FileSessionRepository(DATA_DIR / "sessions.json")
     fact_store = FileFactStore(DATA_DIR / "memory.json")
-    print(f"[api] kho: file trong {DATA_DIR}", flush=True)
+    print(f"[api] kho: file trong {DATA_DIR}", file=sys.stderr, flush=True)
 
 tools = create_tools(repo)
 
@@ -87,7 +88,7 @@ if os.environ.get("E2E_RESET") == "1":
             repo.delete(session.id)
         return {"ok": True}
 
-    print("[api] E2E_RESET đang BẬT — có route xoá sạch dữ liệu.", flush=True)
+    print("[api] E2E_RESET đang BẬT — có route xoá sạch dữ liệu.", file=sys.stderr, flush=True)
 
 
 # ── Phục vụ web đã build (C-018) ────────────────────────────────────────────
@@ -120,7 +121,7 @@ async def unhandled(_request, error: Exception) -> JSONResponse:
     Lỗi luật chơi đã ra 400 ở tầng route, nên tới đây chỉ còn thứ thật sự hỏng —
     và thứ đó thì thử lại có khi được.
     """
-    print(f"unhandled: {error}", flush=True)
+    print(f"unhandled: {error}", file=sys.stderr, flush=True)
     return JSONResponse(
         status_code=500,
         content={

@@ -128,6 +128,12 @@ class Session(Base):
     endedAt: str | None = None
     #: Người đang cầm máy — để hiểu "tôi được bao nhiêu".
     mePlayerId: str | None = None
+    #: Thiết bị đã tạo phiên này (ADR 15 sửa ở C-019).
+    #:
+    #: KHÔNG phải danh tính, không phải đăng nhập — chỉ là cái vòng tay giữ chỗ
+    #: để mở lại app thì về đúng ván bài của mình. Phiên cũ chưa có field này;
+    #: mọi chỗ đọc phải chịu được thiếu.
+    deviceId: str | None = None
     #: Xác nhận trước khi ghi. Mặc định bật; tắt được trong cài đặt.
     confirmBeforeCommit: bool = True
     #: Đang lùi bao nhiêu bước so với thao tác mới nhất.

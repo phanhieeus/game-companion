@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Header
 from fastapi.responses import JSONResponse
 
 from ..domain.errors import Result
@@ -90,19 +90,27 @@ def build_session_router(tools: Tools, repo: SessionRepository) -> APIRouter:
 
     @router.post("", **VIEW)
     @router.post("/", **VIEW)
-    def create(body: dict = Body(default={})):
+    def create(
+        body: dict = Body(default={}),
+        x_device_id: str | None = Header(default=None),
+    ):
         result = tools.create_session(
             players=body.get("players") or [],
             me_player_name=body.get("me_player_name"),
+            device_id=x_device_id,
         )
         if not result.ok:
             return fail(result)
         return viewed(result.unwrap()["session_id"])
 
     @router.get("/active", response_model=ActiveView, response_model_exclude_none=False, responses=ERRORS)
-    def active():
-        """Mở lại app là tiếp tục phiên đang chơi — hỏi server, không hỏi máy mình."""
-        found = repo.active_session()
+    def active(x_device_id: str | None = Header(default=None)):
+        """Phiên đang chơi CỦA THIẾT BỊ NÀY (ADR 15 sửa ở C-019).
+
+        Thoát giữa chừng rồi mở lại là về đúng ván bài của mình; máy người khác
+        không bao giờ thấy phiên này.
+        """
+        found = repo.active_session(x_device_id)
         if found is None:
             return {"session": None, "scoreboard": None}
         return viewed(found.id)

@@ -73,5 +73,14 @@ class FileSessionRepository:
         self._sessions.pop(session_id, None)
         self._flush()
 
-    def active_session(self) -> Session | None:
-        return next((s for s in self.list() if s.status == "active"), None)
+    def active_session(self, device_id: str | None) -> Session | None:
+        if not device_id:
+            return None
+        return next(
+            (
+                s
+                for s in self.list()
+                if s.status == "active" and s.deviceId == device_id
+            ),
+            None,
+        )

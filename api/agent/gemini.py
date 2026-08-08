@@ -10,6 +10,7 @@ API key nằm ở đây và không bao giờ xuống trình duyệt (decision 00
 from __future__ import annotations
 
 import os
+import sys
 
 import httpx
 
@@ -168,7 +169,7 @@ async def call_gemini(
 
         if response.status_code != 200:
             detail = response.text
-            print(f"Gemini {response.status_code}: {detail}", flush=True)
+            print(f"Gemini {response.status_code}: {detail}", file=sys.stderr, flush=True)
             if response.status_code == 429:
                 per_day = "PerDay" in detail or "per_day" in detail
                 if per_day:
@@ -201,5 +202,5 @@ async def call_gemini(
         text_part = next((p for p in parts if p.get("text")), None)
         return ModelReply(text=text_part.get("text") if text_part else "")
     except Exception as error:
-        print(f"gemini failed: {error}", flush=True)
+        print(f"gemini failed: {error}", file=sys.stderr, flush=True)
         return ModelReply(error="Không gọi được Gemini.", retryable=True)

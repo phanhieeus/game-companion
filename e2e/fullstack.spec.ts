@@ -31,8 +31,14 @@ test("C-013 done-evidence: client là UI thuần, dữ liệu ở server", async
   await page.getByRole("button", { name: "Ghi", exact: true }).click();
   await expect(page.getByText("1 ván")).toBeVisible();
 
-  // Cùng lúc đó, server nói y hệt.
-  const api = await request.get("http://localhost:8788/api/sessions/active");
+  // Cùng lúc đó, server nói y hệt — nhưng phải hỏi ĐÚNG THIẾT BỊ (C-019):
+  // không kèm header thì server coi ta là người lạ và không lộ phiên của ai cả.
+  const may = await page.evaluate(() =>
+    localStorage.getItem("game-companion:device-id:v1"),
+  );
+  const api = await request.get("http://localhost:8788/api/sessions/active", {
+    headers: { "X-Device-Id": may ?? "" },
+  });
   const body = (await api.json()) as {
     session: { id: string; rounds: unknown[] };
     scoreboard: { rows: { name: string; total: number }[] };
