@@ -39,6 +39,12 @@ from ..domain.scoring import (
     validate_player_count,
     validate_round_entries,
 )
+from ..guardrails import (
+    SessionLocks,
+    check_deltas,
+    check_round_count,
+    clean_name,
+)
 from ..repository.base import SessionRepository
 
 _id_counter = 0
@@ -194,6 +200,9 @@ class Tools:
 
     def __init__(self, repo: SessionRepository) -> None:
         self.repo = repo
+        # Khoá theo phiên, bọc quanh đọc-sửa-ghi (C-021). Không có nó thì hai
+        # request cùng lúc trên một phiên làm mất ván của nhau.
+        self.locks = SessionLocks()
 
     def _load(self, session_id: str, for_write: bool) -> Result[Session]:
         """Lấy phiên và chặn thao tác ghi lên phiên đã kết thúc."""
@@ -223,7 +232,7 @@ class Tools:
             Player(
                 id=_new_id("ply"),
                 sessionId=session_id,
-                name=str(p.get("name", "")).strip(),
+                name=clean_name(p.get("name", "")),
                 seatNo=p.get("seat_no", index + 1),
                 status="active",
             )
@@ -267,7 +276,7 @@ class Tools:
         player = Player(
             id=_new_id("ply"),
             sessionId=session.id,
-            name=name.strip(),
+            name=clean_name(name),
             seatNo=seat_no if seat_no is not None else active_count + 1,
             status="active",
         )
@@ -334,10 +343,30 @@ class Tools:
         client_request_id: str | None = None,
         source: str = "voice",
     ) -> Result[dict]:
+        out_of_range = check_deltas(e.delta for e in entries)
+        if out_of_range:
+            return err("SUM_DELTA_NOT_ZERO", out_of_range.message)
+
+        with self.locks.for_session(session_id):
+            return self._record_round_locked(
+                session_id, entries, client_request_id, source
+            )
+
+    def _record_round_locked(
+        self,
+        session_id: str,
+        entries: list[DraftEntry],
+        client_request_id: str | None,
+        source: str,
+    ) -> Result[dict]:
         loaded = self._load(session_id, True)
         if not loaded.ok:
             return loaded
         session = loaded.unwrap()
+
+        too_many = check_round_count(len(session.rounds))
+        if too_many:
+            return err("SESSION_ENDED", too_many.message)
 
         # Idempotency: cùng client_request_id chỉ tạo một Round.
         if client_request_id:
@@ -389,6 +418,20 @@ class Tools:
         round_id: str,
         entries: list[DraftEntry],
         source: str = "manual",
+    ) -> Result[dict]:
+        out_of_range = check_deltas(e.delta for e in entries)
+        if out_of_range:
+            return err("SUM_DELTA_NOT_ZERO", out_of_range.message)
+
+        with self.locks.for_session(session_id):
+            return self._update_round_locked(session_id, round_id, entries, source)
+
+    def _update_round_locked(
+        self,
+        session_id: str,
+        round_id: str,
+        entries: list[DraftEntry],
+        source: str,
     ) -> Result[dict]:
         loaded = self._load(session_id, True)
         if not loaded.ok:

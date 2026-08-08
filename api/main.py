@@ -51,8 +51,9 @@ tools = create_tools(repo)
 
 app = FastAPI(title="Ghi điểm", version="1.0.0")
 
+agent_router = build_agent_router(tools, repo, fact_store)
 app.include_router(build_session_router(tools, repo), prefix="/api/sessions")
-app.include_router(build_agent_router(tools, repo, fact_store), prefix="/api/sessions")
+app.include_router(agent_router, prefix="/api/sessions")
 
 
 class Health(BaseModel):
@@ -86,6 +87,9 @@ if os.environ.get("E2E_RESET") == "1":
     def reset() -> dict:
         for session in repo.list():
             repo.delete(session.id)
+        # Dọn cả hạn mức: mỗi test bắt đầu từ con số không, nếu không thì test
+        # chạy sau bị test chạy trước ăn mất phần.
+        agent_router.limiter.reset()  # type: ignore[attr-defined]
         return {"ok": True}
 
     print("[api] E2E_RESET đang BẬT — có route xoá sạch dữ liệu.", file=sys.stderr, flush=True)

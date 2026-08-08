@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Header, Request
 
 from ..agent.gemini import call_gemini
 from ..agent.loop import resume_agent, run_agent
@@ -17,6 +17,7 @@ from ..agent.memory import FactStore, create_memory
 from ..agent.tools import tool_declarations
 from ..agent.types import AgentMessage, ToolCall, ToolContext
 from ..domain.scoring import compute_scoreboard
+from ..guardrails import RateLimiter, check_utterance
 from ..repository.base import SessionRepository
 from ..tools import Tools
 from .sessions import ERRORS, error_response
@@ -42,6 +43,19 @@ def build_agent_router(
 ) -> APIRouter:
     router = APIRouter()
     sessions: dict[str, AgentSession] = {}
+    # Mỗi lượt tiêu MỘT lượt gọi Gemini bằng key của operator, trên một URL công
+    # khai. Không có lớp này thì ai biết địa chỉ cũng đốt sạch quota (C-021).
+    limiter = RateLimiter()
+
+    def rate_key(request: Request, device_id: str | None) -> str:
+        """Khoá theo thiết bị, lùi về IP khi không có header.
+
+        Thiết bị dễ giả hơn IP, nhưng ghép cả hai thì một người đổi `deviceId`
+        liên tục vẫn bị IP chặn, còn cả nhà dùng chung IP thì không chặn nhầm
+        nhau nhờ thiết bị.
+        """
+        ip = request.client.host if request.client else "?"
+        return f"{device_id or 'khong-thiet-bi'}|{ip}"
 
     def state_of(session_id: str) -> AgentSession:
         if session_id not in sessions:
@@ -122,7 +136,12 @@ def build_agent_router(
         response_model_exclude_none=True,
         responses=ERRORS,
     )
-    async def speak(session_id: str, body: dict = Body(default={})):
+    async def speak(
+        session_id: str,
+        request: Request,
+        body: dict = Body(default={}),
+        x_device_id: str | None = Header(default=None),
+    ):
         state = state_of(session_id)
         ctx = context_for(session_id, state)
         if ctx is None:
@@ -131,6 +150,15 @@ def build_agent_router(
         text = str(body.get("text") or "").strip()
         if not text:
             return error_response("EMPTY_UTTERANCE", "Chưa nghe được gì.", 400)
+
+        # Chặn TRƯỚC khi gọi model: câu 10k ký tự không được tốn lượt Gemini nào.
+        too_long = check_utterance(text)
+        if too_long:
+            return error_response("UTTERANCE_TOO_LONG", too_long.message, 400)
+
+        limited = limiter.check(rate_key(request, x_device_id))
+        if limited:
+            return error_response("RATE_LIMITED", limited.message, 429)
 
         # Câu mới trong lúc còn lời gọi treo = người dùng đổi ý. Bỏ lời gọi cũ,
         # đừng để nó nằm đó rồi chốt nhầm ở lần bấm sau.
@@ -150,6 +178,16 @@ def build_agent_router(
         responses={**ERRORS, 409: {"model": ErrorBody}},
     )
     async def confirm(session_id: str, body: dict = Body(default={})):
+        """KHÔNG tính vào hạn mức — cố ý.
+
+        Chốt là NỬA SAU của một lượt người dùng đã trả giá ở `/agent`. Chặn nó
+        thì người dùng kẹt giữa chừng: đề xuất treo trên màn hình mà bấm gì cũng
+        không được, và cách thoát duy nhất là tải lại trang.
+
+        Không sợ bị lạm dụng: chốt cần một lời gọi đang chờ, mà lời gọi đó chỉ
+        sinh ra từ `/agent` — nơi đã có hạn mức. Không có gì chờ thì trả 409
+        ngay, không tốn lượt Gemini nào.
+        """
         state = state_of(session_id)
         ctx = context_for(session_id, state)
         if ctx is None:
@@ -170,4 +208,5 @@ def build_agent_router(
 
         return reply(session_id, state, result)
 
+    router.limiter = limiter  # type: ignore[attr-defined]  # cho test đặt lại
     return router
