@@ -6,8 +6,10 @@ import { createTools } from "../tools";
 import { useConversation } from "../conversation/useConversation";
 import { isSpeechRecognitionSupported } from "../voice/speech";
 import { RoundsTable } from "./RoundsTable";
+import { useRoundOrder } from "./roundOrder";
+import { BackToTop } from "./BackToTop";
+import { ManualEntry } from "./ManualEntry";
 import { ProposalCard } from "./ProposalCard";
-import { Scoreboard } from "./Scoreboard";
 import { SetupScreen } from "./SetupScreen";
 
 const repo = new LocalStorageSessionRepository();
@@ -30,6 +32,8 @@ export function App() {
   );
   const [setupError, setSetupError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [roundOrder, toggleRoundOrder] = useRoundOrder();
+  const [manualOpen, setManualOpen] = useState(false);
 
   const refresh = useCallback(() => {
     if (!session) return;
@@ -69,6 +73,20 @@ export function App() {
     if (!result.ok) return setSetupError(result.error.message);
     setSetupError(null);
     setSession(repo.get(result.data.session_id) ?? null);
+  };
+
+  /** Nhập tay đi qua đúng record_round như ván nói bằng giọng (ADR 4). */
+  const submitManual = (entries: { playerId: string; delta: number }[]) => {
+    if (!session) return;
+    const result = tools.record_round({
+      session_id: session.id,
+      entries,
+      client_request_id: `manual-${Date.now()}`,
+      source: "manual",
+    });
+    if (!result.ok) return;
+    setManualOpen(false);
+    refresh();
   };
 
   const undoRound = (roundId: string) => {
@@ -142,15 +160,24 @@ export function App() {
         </div>
       )}
 
-      <Scoreboard scoreboard={scoreboard} mePlayerId={session.mePlayerId} />
-
       <section className="panel">
-        <h2 className="panel-title">Điểm từng ván</h2>
+        <div className="panel-head">
+          <h2 className="panel-title">Điểm từng ván</h2>
+          <button
+            type="button"
+            className="order-toggle"
+            onClick={toggleRoundOrder}
+            aria-label="Đổi thứ tự ván"
+          >
+            {roundOrder === "newest-last" ? "Mới nhất ↓" : "Mới nhất ↑"}
+          </button>
+        </div>
         <RoundsTable
           session={session}
           rounds={history}
-          order="newest-last"
+          order={roundOrder}
           onUndo={undoRound}
+          scoreboard={scoreboard}
         />
       </section>
 
@@ -202,7 +229,15 @@ export function App() {
           />
         )}
 
-        {view.state !== "confirming" && (
+        {manualOpen && view.state !== "confirming" && (
+          <ManualEntry
+            session={session}
+            onSubmit={submitManual}
+            onCancel={() => setManualOpen(false)}
+          />
+        )}
+
+        {view.state !== "confirming" && !manualOpen && (
           <span className={`voice-state${listening ? " live" : ""}`}>
             {STATE_LABEL[view.state]}
           </span>
@@ -224,7 +259,20 @@ export function App() {
               ? "Nhấn giữ để nói"
               : "Trình duyệt không hỗ trợ giọng nói"}
         </button>
+
+        {/* Đường lui khi micro bị chặn hoặc hết quota — xem C-004. */}
+        {!manualOpen && view.state !== "confirming" && (
+          <button
+            type="button"
+            className="manual-open"
+            onClick={() => setManualOpen(true)}
+          >
+            Nhập tay
+          </button>
+        )}
       </div>
+
+      <BackToTop />
     </div>
   );
 }

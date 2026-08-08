@@ -1,4 +1,4 @@
-import type { Round, Session } from "../domain/types";
+import type { Round, Scoreboard, Session } from "../domain/types";
 
 export type RoundOrder = "newest-last" | "newest-first";
 
@@ -7,6 +7,11 @@ interface Props {
   rounds: Round[];
   order: RoundOrder;
   onUndo: (roundId: string) => void;
+  /**
+   * C-005: bảng xếp hạng riêng ở đầu trang đã bị bỏ (tổng hiện hai chỗ là
+   * thừa). Hạng và thứ tự dồn vào chân bảng này, nên cần scoreboard để lấy.
+   */
+  scoreboard: Scoreboard;
 }
 
 /**
@@ -19,7 +24,13 @@ interface Props {
  * Không cuộn ngang (ADR quyết định 6): co cỡ chữ theo số người chơi. Cuộn ngang
  * giữa ván bài thì người cột cuối bị khuất — đúng người hay bị quên nhất.
  */
-export function RoundsTable({ session, rounds, order, onUndo }: Props) {
+export function RoundsTable({
+  session,
+  rounds,
+  order,
+  onUndo,
+  scoreboard,
+}: Props) {
   const players = session.players.filter((p) => p.status === "active");
   const recorded = rounds.filter((r) => r.status === "recorded");
 
@@ -40,6 +51,11 @@ export function RoundsTable({ session, rounds, order, onUndo }: Props) {
   const totalOf = (playerId: string) =>
     recorded.reduce((sum, r) => sum + (deltaOf(r, playerId) ?? 0), 0);
 
+  const leaderId =
+    scoreboard.roundsPlayed > 0
+      ? (scoreboard.rows.find((r) => r.rank === 1)?.playerId ?? null)
+      : null;
+
   return (
     <div className={`rounds-table cols-${players.length}`}>
       <table>
@@ -49,8 +65,14 @@ export function RoundsTable({ session, rounds, order, onUndo }: Props) {
               Ván
             </th>
             {players.map((p) => (
-              <th key={p.id} scope="col" title={p.name}>
+              <th
+                key={p.id}
+                scope="col"
+                title={p.name}
+                className={p.id === leaderId ? "leader-col" : ""}
+              >
                 {p.name}
+                {p.id === session.mePlayerId && <span className="me"> ·</span>}
               </th>
             ))}
             <th className="c-act" scope="col">
@@ -116,6 +138,7 @@ export function RoundsTable({ session, rounds, order, onUndo }: Props) {
             })}
             <td className="c-act" />
           </tr>
+
         </tfoot>
       </table>
     </div>

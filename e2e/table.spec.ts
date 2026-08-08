@@ -80,20 +80,19 @@ test("PRD metric #1: tổng mỗi cột khớp chính xác bảng xếp hạng",
     tableTotals[name] = Number((await footer.nth(i).innerText()).replace("+", ""));
   }
 
-  // Bảng xếp hạng ở trên.
-  const boardTotals: Record<string, number> = {};
-  const boardRows = page.locator(".scoreboard .row");
-  for (let i = 0; i < (await boardRows.count()); i += 1) {
-    const row = boardRows.nth(i);
-    const name = (await row.locator(".name").innerText())
-      .replace(/·\s*tôi\s*$/u, "")
-      .trim();
-    boardTotals[name] = Number(
-      (await row.locator(".total").innerText()).replace("+", ""),
-    );
+  // C-005 bỏ bảng thứ hai, nên đối chiếu hàng Σ với tổng cộng dồn từ chính
+  // các hàng trong bảng — vẫn bắt được lỗi nếu Σ tính sai.
+  const summed: Record<string, number> = { Nam: 0, "Hùng": 0, Lan: 0, "Tú": 0 };
+  const bodyRows = page.locator(".rounds-table tbody tr");
+  for (let r = 0; r < (await bodyRows.count()); r += 1) {
+    const cells = bodyRows.nth(r).locator("td");
+    for (const [i, name] of ["Nam", "Hùng", "Lan", "Tú"].entries()) {
+      const text = (await cells.nth(i).innerText()).trim();
+      if (text !== "·") summed[name] += Number(text.replace("+", ""));
+    }
   }
 
-  expect(tableTotals).toEqual(boardTotals);
+  expect(tableTotals).toEqual(summed);
   // Zero-sum: cả bảng cộng lại phải bằng 0.
   expect(Object.values(tableTotals).reduce((a, b) => a + b, 0)).toBe(0);
 });
@@ -129,4 +128,68 @@ test("hủy một ván từ bảng thì hàng biến mất và tổng tính lạ
 
   await expect(page.locator(".rounds-table tbody tr")).toHaveCount(1);
   await expect(page.locator(".rounds-table tfoot td").first()).toHaveText("+3");
+});
+
+/* ---- C-002: nút đổi thứ tự + nút về đầu trang ---- */
+
+test("C-002: đổi thứ tự ván, và lựa chọn sống sót qua reload", async ({ page }) => {
+  await startSession(page, ["Nam", "Hùng", "Lan", "Tú"]);
+  await record(page, { Nam: 3, Hùng: -1, Lan: -1, Tú: -1 });
+  await record(page, { Nam: -2, Hùng: 5, Lan: -2, Tú: -1 });
+  await record(page, { Nam: 1, Hùng: -3, Lan: 1, Tú: 1 });
+
+  const rows = page.locator(".rounds-table tbody tr");
+  // Mặc định: mới nhất ở dưới.
+  await expect(rows.first().locator(".c-seq")).toHaveText("1");
+  await expect(rows.last().locator(".c-seq")).toHaveText("3");
+
+  await page.getByRole("button", { name: "Đổi thứ tự ván" }).click();
+  await expect(rows.first().locator(".c-seq")).toHaveText("3");
+  await expect(rows.last().locator(".c-seq")).toHaveText("1");
+
+  // Nhớ lựa chọn khi mở lại app.
+  await page.reload();
+  await expect(page.locator(".rounds-table tbody tr").first().locator(".c-seq"))
+    .toHaveText("3");
+});
+
+test("C-002: nút về đầu trang ẩn khi ở đầu, hiện sau khi cuộn", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 640 });
+  await startSession(page, ["Nam", "Hùng", "Lan", "Tú"]);
+  // C-005 bỏ bảng trên nên trang ngắn hẳn đi — cần nhiều ván hơn mới cuộn được.
+  // Chính đó là bằng chứng C-005 có tác dụng.
+  for (let i = 0; i < 16; i += 1) {
+    await record(page, { Nam: 1, Hùng: -1, Lan: 1, Tú: -1 });
+  }
+
+  const button = page.getByRole("button", { name: "Về đầu trang" });
+  await expect(button).toBeHidden();
+
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect(button).toBeVisible();
+
+  await button.click();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeLessThan(50);
+});
+
+test("C-003 / PRD metric #3: sau 10 ván 5 người, nút Voice vẫn trong màn hình", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await startSession(page, ["Nam", "Hùng", "Lan", "Tú", "Minh"]);
+  for (let i = 0; i < 10; i += 1) {
+    await record(page, { Nam: 2, Hùng: -1, Lan: -1, Tú: 1, Minh: -1 });
+  }
+  await expect(page.locator(".rounds-table tbody tr")).toHaveCount(10);
+
+  // Không cuộn: nút Voice phải nằm trong viewport ngay khi mở.
+  const voice = page.getByRole("button", { name: /Nhấn giữ để nói/ });
+  await expect(voice).toBeInViewport();
+
+  // C-005: chỉ còn MỘT bảng — bảng xếp hạng riêng đã bị bỏ.
+  await expect(page.locator(".scoreboard")).toHaveCount(0);
+  // Không có hàng Hạng (operator không cần).
+  await expect(page.locator(".rounds-table .rank-row")).toHaveCount(0);
+  // 5 cột người chơi vẫn đủ.
+  await expect(page.locator(".rounds-table thead th")).toHaveCount(7);
 });

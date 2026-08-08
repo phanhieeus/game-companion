@@ -75,3 +75,32 @@ test("C-001 done-evidence: bảng 5 người 3 ván @360px", async ({ page }) =>
   }
   await page.screenshot({ path: "screenshots/5-table.png", fullPage: true });
 });
+
+/** Done-evidence C-003 + C-004. */
+test("C-003/C-004 done-evidence", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await installFakeSpeech(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "+ Thêm người chơi" }).click();
+  for (const [i, name] of ["Nam", "Hùng", "Lan", "Tú", "Minh"].entries()) {
+    await page.getByLabel(`Tên người chơi ${i + 1}`).fill(name);
+  }
+  await page.getByRole("button", { name: "Bắt đầu chơi" }).click();
+
+  for (let i = 0; i < 10; i += 1) {
+    await mock(page, [["Nam", 2], ["Hùng", -1], ["Lan", -1], ["Tú", 1], ["Minh", -1]]);
+    await say(page, "ghi ván");
+    await page.getByRole("button", { name: "Ghi", exact: true }).click();
+    await page.waitForTimeout(80);
+  }
+  // C-003: không fullPage — chứng minh đúng những gì thấy trong 1 màn hình.
+  await page.screenshot({ path: "screenshots/9-single-table.png" });
+
+  // C-004: form nhập tay đang mở với số đã gõ.
+  await page.getByRole("button", { name: "Nhập tay" }).click();
+  await page.getByLabel("Điểm của Nam").fill("3");
+  await page.getByLabel("Điểm của Hùng").fill("-1");
+  await page.getByLabel("Điểm của Lan").fill("-1");
+  await page.getByLabel("Điểm của Tú").fill("-1");
+  await page.screenshot({ path: "screenshots/8-manual.png" });
+});

@@ -498,3 +498,120 @@ button {
 @media (min-width: 30rem) {
   .app { padding: 1.4rem; }
 }
+
+/* ---------- panel head + back to top (C-002) ---------- */
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.order-toggle {
+  padding: 0.32rem 0.6rem;
+  border-radius: 0.5rem;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.back-to-top {
+  position: fixed;
+  right: 0.9rem;
+  bottom: calc(6.2rem + env(safe-area-inset-bottom));
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 1.1rem;
+  line-height: 1;
+  z-index: 5;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+
+/* ---------- compact scoreboard (C-003) ---------- */
+
+/* Mật độ, không phải cắt dữ liệu: vẫn đủ hạng + tên + "tôi" + điểm. */
+.scoreboard.compact .row { padding: 0.42rem 0.8rem; gap: 0.55rem; }
+.scoreboard.compact .row .total { font-size: 1.05rem; }
+.scoreboard.compact .row .name { font-size: 0.9rem; }
+.scoreboard.compact .row .rank { font-size: 0.76rem; }
+.scoreboard.compact { border-radius: 0.85rem; }
+
+/* ---------- manual entry (C-004) ---------- */
+
+.manual {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  padding: 0.85rem 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.manual-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
+.manual-head strong { white-space: nowrap; }
+.manual-hint { color: var(--muted); font-size: 0.74rem; text-align: right; }
+
+.manual-rows { display: flex; flex-direction: column; gap: 0.35rem; }
+
+.manual-row {
+  display: grid;
+  grid-template-columns: 1fr 5.5rem;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.mname { font-size: 0.92rem; }
+
+.manual-row input {
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.55rem;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.manual-row input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.manual-sum { font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.manual-sum.ok { color: var(--muted); }
+.manual-sum.bad { color: var(--warn); font-weight: 600; }
+
+.confirm-bar button:disabled { background: var(--surface-2); color: var(--muted); cursor: not-allowed; }
+
+.manual-open {
+  padding: 0.6rem;
+  border-radius: 0.7rem;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* ---------- rank row + leader column (C-005) ---------- */
+
+.rounds-table .rank-row td,
+.rounds-table .rank-row th {
+  border-top: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding-top: 0.1rem;
+  padding-bottom: 0.55rem;
+}
+
+.rounds-table thead th.me { color: var(--accent); }
+.rounds-table thead th .me { color: var(--accent); font-weight: 700; }
+.rounds-table .leader-col { color: var(--accent); }
+.rounds-table thead th.leader-col { color: var(--accent); }

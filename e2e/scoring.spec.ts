@@ -46,17 +46,27 @@ async function startSession(page: Page): Promise<void> {
   await expect(page.getByRole("button", { name: /Nhấn giữ để nói/ })).toBeVisible();
 }
 
-/** Đọc bảng điểm đang hiện trên màn hình. */
+/**
+ * Đọc điểm tổng từ hàng Σ ở chân bảng.
+ *
+ * C-005 bỏ bảng xếp hạng riêng ở đầu trang — tổng chỉ còn một chỗ duy nhất.
+ */
 async function readScoreboard(page: Page): Promise<Record<string, number>> {
-  const rows = page.locator(".scoreboard .row");
   const result: Record<string, number> = {};
-  for (let i = 0; i < (await rows.count()); i += 1) {
-    const row = rows.nth(i);
-    // Ô tên có thể kèm nhãn "· tôi" cho người cầm máy — bỏ đi khi so sánh.
-    const name = (await row.locator(".name").innerText())
-      .replace(/·\s*tôi\s*$/u, "")
-      .trim();
-    const total = (await row.locator(".total").innerText()).trim();
+  const headers = page.locator(".rounds-table thead th");
+  const footer = page.locator(".rounds-table tfoot td");
+
+  const count = await headers.count();
+  if (count === 0) {
+    // Chưa ghi ván nào thì chưa có bảng — mọi người đều 0.
+    for (const name of ["Nam", "Hùng", "Lan", "Tú"]) result[name] = 0;
+    return result;
+  }
+
+  // headers: [Ván, ...người chơi, (nút hủy)] → bỏ đầu và cuối.
+  for (let i = 1; i < count - 1; i += 1) {
+    const name = (await headers.nth(i).innerText()).replace("·", "").trim();
+    const total = (await footer.nth(i - 1).innerText()).trim();
     result[name] = Number(total.replace("+", ""));
   }
   return result;
