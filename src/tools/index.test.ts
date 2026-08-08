@@ -617,3 +617,50 @@ describe("sửa rỗng (không đổi gì)", () => {
     expect(tools.get_scoreboard({ session_id: sessionId }).data!.roundsPlayed).toBe(1);
   });
 });
+
+describe("sửa rỗng không phải là một bước undo", () => {
+  const pair = (ids: string[], d: number) => [
+    { playerId: ids[0]!, delta: d },
+    { playerId: ids[1]!, delta: -d },
+  ];
+
+  it("sau khi lưu y nguyên, Hoàn tác vẫn nhắm vào thao tác THẬT trước đó", () => {
+    const { tools, sessionId, ids } = setup();
+    tools.record_round({ session_id: sessionId, entries: pair(ids, 1) });
+    const rec2 = tools.record_round({ session_id: sessionId, entries: pair(ids, 2) });
+
+    // Mở ván 2 ra, lưu y nguyên.
+    tools.update_round({
+      session_id: sessionId,
+      round_id: rec2.data!.round_id,
+      entries: pair(ids, 2),
+    });
+
+    // Nhãn vẫn là "thêm ván 2" — chứ không phải "sửa ván 2".
+    expect(tools.get_undo_state({ session_id: sessionId }).data!.undo).toBe(
+      "Hoàn tác thêm ván 2",
+    );
+
+    // Và bấm một lần là ván 2 biến mất luôn, không phải bấm hai lần.
+    const undone = tools.undo_last({ session_id: sessionId });
+    expect(undone.data!.scoreboard.roundsPlayed).toBe(1);
+  });
+
+  it("lưu y nguyên nhiều lần cũng không thêm bước nào", () => {
+    const { tools, sessionId, ids } = setup();
+    const rec = tools.record_round({ session_id: sessionId, entries: pair(ids, 4) });
+
+    for (let i = 0; i < 5; i += 1) {
+      tools.update_round({
+        session_id: sessionId,
+        round_id: rec.data!.round_id,
+        entries: pair(ids, 4),
+      });
+    }
+
+    // Một lần Hoàn tác là về trắng — không phải sáu lần.
+    tools.undo_last({ session_id: sessionId });
+    expect(tools.get_scoreboard({ session_id: sessionId }).data!.roundsPlayed).toBe(0);
+    expect(tools.get_undo_state({ session_id: sessionId }).data!.undo).toBeNull();
+  });
+});
