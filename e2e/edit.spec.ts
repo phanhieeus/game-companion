@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { installFakeSpeech, say } from "./fakeSpeech";
-import { resetServer, scriptAgent, recordThenSay, record } from "./fakeAgent";
+import { commitRound, resetServer, scriptAgent, recordThenSay, record } from "./fakeAgent";
 
 /**
  * Sửa ô tại chỗ + thêm hàng + nhật ký thay đổi.
@@ -124,8 +124,7 @@ test("nhật ký ghi cả ván nói bằng giọng lẫn ván nhập tay", async
     "Nam ăn 4 của Hùng": recordThenSay(record(["Nam", 4], ["Hùng", -4])),
   });
   await say(page, "Nam ăn 4 của Hùng");
-  await page.getByRole("button", { name: "Ghi", exact: true }).click();
-  await expect(page.locator(".proposal")).toBeHidden();
+  await commitRound(page);
 
   // Sửa nó bằng tay → nhật ký phải phân biệt được nguồn.
   await page.locator(".rounds-table tbody tr").first().locator("td.tap").first().click();

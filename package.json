@@ -4,15 +4,14 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n web,api -c cyan,magenta \"vite\" \"node server/index.ts\"",
+    "dev": "concurrently -n web,api -c cyan,magenta \"vite\" \".venv/bin/uvicorn api.main:app --port 8787 --reload\"",
     "dev:web": "vite",
-    "dev:api": "node server/index.ts",
+    "dev:api": ".venv/bin/uvicorn api.main:app --port 8787 --reload",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
-    "start": "node server/index.ts"
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "react": "^19.2.0",

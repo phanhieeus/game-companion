@@ -8,8 +8,11 @@ import { defineConfig, devices } from "@playwright/test";
  * kiểm chứng bằng tay trên Chrome thật.
  *
  * Từ ADR 13, dữ liệu và agent nằm ở server nên e2e phải chạy CẢ BACKEND THẬT:
- * ba tiến trình — web, api, và một Gemini giả. Thứ duy nhất bị giả là model;
- * HTTP, tool layer, chốt HITL và lưu đĩa đều là code thật.
+ * ba tiến trình — web, api (FastAPI, ADR 16), và một Gemini giả. Thứ duy nhất
+ * bị giả là model; HTTP, tool layer, chốt HITL và lưu đĩa đều là code thật.
+ *
+ * Không một assertion nào trong e2e biết backend viết bằng ngôn ngữ gì — đó
+ * chính là điều làm chúng đáng tin khi đổi ngôn ngữ.
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -33,9 +36,8 @@ export default defineConfig({
     {
       // Thư mục dữ liệu riêng: test không được đụng vào phiên đang chơi thật.
       command:
-        "node server/index.ts",
+        ".venv/bin/uvicorn api.main:app --port 8788 --log-level warning",
       env: {
-        PORT: "8788",
         DATA_DIR: ".e2e-data",
         E2E_RESET: "1",
         GEMINI_API_KEY: "fake-key-for-e2e",

@@ -1,6 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 import { installFakeSpeech, say, spokenLines } from "./fakeSpeech";
-import { resetServer, scriptAgent, recordThenSay, record, type AgentReply } from "./fakeAgent";
+import {
+  commitRound,
+  resetServer,
+  scriptAgent,
+  recordThenSay,
+  record,
+  type AgentReply,
+} from "./fakeAgent";
 
 /**
  * Luồng end-to-end với model giả lập.
@@ -158,11 +165,13 @@ test("hỏi bảng điểm thì trả lời thẳng, không hỏi xác nhận", 
   });
 
   await say(page, "Nam ăn 5 của Hùng");
-  await page.getByRole("button", { name: "Ghi", exact: true }).click();
-  await expect(page.getByText("1 ván")).toBeVisible();
+  await commitRound(page);
 
   await say(page, "ai đang dẫn");
 
+  // Đợi câu trả lời hiện lên rồi mới đọc log giọng nói — nếu không thì đang
+  // kiểm một thời điểm mà agent còn chưa trả lời xong.
+  await expect(page.getByText("Nam dẫn với 5 điểm.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Ghi", exact: true })).toBeHidden();
   expect((await spokenLines(page)).at(-1)).toContain("Nam dẫn với 5 điểm");
 });
@@ -178,8 +187,7 @@ test("hủy ván thì bảng điểm quay lại như trước", async ({ page })
   });
 
   await say(page, "Nam ăn 3 của Hùng");
-  await page.getByRole("button", { name: "Ghi", exact: true }).click();
-  await expect(page.getByText("1 ván")).toBeVisible();
+  await commitRound(page);
 
   await say(page, "nhầm rồi hủy ván vừa nãy");
 

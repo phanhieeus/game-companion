@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { installFakeSpeech, say } from "./fakeSpeech";
-import { resetServer, scriptAgent, recordThenSay, record } from "./fakeAgent";
+import { commitRound, resetServer, scriptAgent, recordThenSay, record } from "./fakeAgent";
 
 /** Chụp màn hình để xem UI thật, không đoán. Chạy: npx playwright test screenshot */
 
@@ -29,12 +29,11 @@ test("chụp các màn hình chính", async ({ page }) => {
   await mock(page, cau, [["Nam", 3], ["Hùng", -1], ["Lan", -1], ["Tú", -1]]);
   await say(page, cau);
   await page.screenshot({ path: "screenshots/3-confirm.png", fullPage: true });
-  await page.getByRole("button", { name: "Ghi", exact: true }).click();
+  await commitRound(page);
 
   await mock(page, "Tú ăn 5", [["Tú", 5], ["Nam", -2], ["Hùng", -2], ["Lan", -1]]);
   await say(page, "Tú ăn 5");
-  await page.getByRole("button", { name: "Ghi", exact: true }).click();
-  await page.waitForTimeout(300);
+  await commitRound(page);
   await page.screenshot({ path: "screenshots/4-played.png", fullPage: true });
 });
 
@@ -58,8 +57,7 @@ test("C-010 done-evidence: agent đề xuất ván bằng giọng nói @360px", 
   const cau = "Nam ăn 3, ba người kia mỗi người chung 1";
   await mock(page, cau, [["Nam", 3], ["Hùng", -1], ["Lan", -1], ["Tú", -1]]);
   await say(page, cau);
-  await page.getByRole("button", { name: "Ghi", exact: true }).click();
-  await expect(page.getByText("1 ván")).toBeVisible();
+  await commitRound(page);
 
   // Ván 2 đang chờ chốt — đây là lúc chụp.
   const cau2 = "Lan ăn 4, Nam chung 2, Hùng với Tú mỗi người 1";
@@ -89,8 +87,7 @@ test("C-001 done-evidence: bảng 5 người 3 ván @360px", async ({ page }) =>
   for (const deltas of rounds) {
     await mock(page, "ghi ván", deltas);
     await say(page, "ghi ván");
-    await page.getByRole("button", { name: "Ghi", exact: true }).click();
-    await page.waitForTimeout(150);
+    await commitRound(page);
   }
   await page.screenshot({ path: "screenshots/5-table.png", fullPage: true });
 });
@@ -109,8 +106,7 @@ test("C-003/C-004 done-evidence", async ({ page }) => {
   for (let i = 0; i < 10; i += 1) {
     await mock(page, "ghi ván", [["Nam", 2], ["Hùng", -1], ["Lan", -1], ["Tú", 1], ["Minh", -1]]);
     await say(page, "ghi ván");
-    await page.getByRole("button", { name: "Ghi", exact: true }).click();
-    await page.waitForTimeout(80);
+    await commitRound(page);
   }
   // C-003: không fullPage — chứng minh đúng những gì thấy trong 1 màn hình.
   await page.screenshot({ path: "screenshots/9-single-table.png" });

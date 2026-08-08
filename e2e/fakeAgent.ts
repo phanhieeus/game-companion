@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
 /**
  * Điều khiển Gemini giả (`e2e/fakeGeminiServer.ts`) và dọn dữ liệu giữa các test.
@@ -76,3 +76,18 @@ export const record = (...deltas: [string, number][]): AgentReply => ({
     },
   },
 });
+
+/**
+ * Bấm Ghi rồi ĐỢI ván thật sự vào sổ.
+ *
+ * Thẻ đề xuất biến mất ngay khi bấm, trước khi server trả lời. Nếu test coi đó
+ * là "xong" rồi đặt kịch bản mới, lượt gọi model còn đang bay của lần chốt cũ
+ * sẽ ăn mất bước 0 của kịch bản mới — lượt nói kế tiếp nhận nhầm câu trả lời
+ * của lượt trước. Đợi số hàng trong bảng tăng mới là đợi đúng thứ.
+ */
+export async function commitRound(page: Page): Promise<void> {
+  const rows = page.locator(".rounds-table tbody tr");
+  const before = await rows.count();
+  await page.getByRole("button", { name: "Ghi", exact: true }).click();
+  await expect(rows).toHaveCount(before + 1);
+}

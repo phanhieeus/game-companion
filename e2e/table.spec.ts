@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { installFakeSpeech, say } from "./fakeSpeech";
-import { resetServer, scriptAgent, recordThenSay, record } from "./fakeAgent";
+import { commitRound, resetServer, scriptAgent, recordThenSay, record } from "./fakeAgent";
 
 /** C-001 — bảng điểm nhiều cột theo ván. Verify theo cards/C-001.md. */
 
@@ -31,8 +31,7 @@ async function addRound(
     ),
   });
   await say(page, "ghi ván");
-  await page.getByRole("button", { name: "Ghi", exact: true }).click();
-  await expect(page.locator(".proposal")).toBeHidden();
+  await commitRound(page);
 }
 
 test("mỗi ván một hàng, số ván ở cột đầu, ván mới nhất ở DƯỚI", async ({ page }) => {
