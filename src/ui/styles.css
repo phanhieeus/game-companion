@@ -359,26 +359,89 @@ button:disabled { cursor: not-allowed; }
 
 .add-row:active { background: var(--surface-2); color: var(--text); }
 
-/* ══════════ transcript ══════════ */
+/* ══════════ hội thoại ══════════ */
 
-.transcript {
+.chat {
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   padding: var(--s3);
-  min-height: 3.5rem;
+  min-height: 4rem;
+  /* Trần chiều cao vì khối này DÍNH ĐÁY: không chặn lại thì nói chục lượt là nó
+     ăn hết màn hình và bảng điểm — thứ người ta liếc nhiều nhất — chẳng còn chỗ.
+     Quá trần thì mạch tự cuộn trong khung. */
+  max-height: min(38vh, 15rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: var(--s2);
   font-size: var(--t-sm);
 }
 
-.transcript .hint { color: var(--text-faint); line-height: 1.55; }
-.transcript .you { color: var(--text-dim); }
-/* Đang nghe thì chữ sáng lên — tín hiệu máy vẫn bắt được tiếng. */
-.transcript .you.live { color: var(--text); font-weight: 500; }
-.transcript .agent { line-height: 1.55; }
-.transcript .error { color: var(--neg); line-height: 1.55; }
+.chat .hint { color: var(--text-faint); line-height: 1.55; }
+
+.bubble {
+  max-width: 88%;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-md);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  /* Người ta đọc tên và số dài; thà xuống dòng giữa từ còn hơn tràn ngang. */
+  overflow-wrap: anywhere;
+}
+
+.bubble.you {
+  align-self: flex-end;
+  background: var(--accent-dim);
+  color: var(--text);
+  border-bottom-right-radius: var(--r-sm);
+}
+
+/* Câu đang nghe dở — mờ hơn để phân biệt với câu ĐÃ gửi đi. */
+.bubble.you.live { opacity: 0.55; }
+
+.bubble.agent {
+  align-self: flex-start;
+  background: var(--surface-2);
+  color: var(--text);
+  border-bottom-left-radius: var(--r-sm);
+}
+
+.bubble.agent.error {
+  color: var(--neg);
+  background: transparent;
+  border: 1px solid var(--neg);
+}
+
+/* Ba chấm "đang nghĩ" — nằm ĐÚNG chỗ câu trả lời sắp hiện ra, nên mắt không
+   phải đi tìm trạng thái ở một góc khác màn hình. */
+.bubble.thinking {
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding-block: var(--s3);
+}
+
+.bubble.thinking span {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: var(--r-full);
+  background: var(--text-faint);
+  animation: thinking-dot 1.2s ease-in-out infinite;
+}
+
+.bubble.thinking span:nth-child(2) { animation-delay: 0.15s; }
+.bubble.thinking span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes thinking-dot {
+  0%, 60%, 100% { opacity: 0.25; }
+  30% { opacity: 1; }
+}
+
+/* Thẻ đề xuất là một lượt trong mạch, nên trải hết bề ngang chứ không bó như
+   bong bóng chữ — các con số cần chỗ để đọc nhanh. */
+.chat .proposal { align-self: stretch; }
 
 .retry {
   align-self: flex-start;
@@ -450,11 +513,12 @@ button:disabled { cursor: not-allowed; }
 .confirm-bar .yes { background: var(--pos); color: #06240f; }
 .confirm-bar .no { background: var(--surface-3); color: var(--text-dim); }
 
-/* ══════════ voice ══════════ */
+/* ══════════ composer — gõ chữ hoặc nhấn giữ để nói ══════════ */
 
 .spacer { flex: 1; min-height: var(--s2); }
 
-.voice-area {
+/* Khối neo đáy: mạch hội thoại + thanh nhập. Bảng điểm cuộn phía trên nó. */
+.dock {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -462,36 +526,63 @@ button:disabled { cursor: not-allowed; }
   bottom: 0;
   /* Vệt mờ phải NGẮN và dứt khoát. Trước đây nó trải dài 20% chiều cao khối
      nên phủ mờ luôn hàng Σ ở đáy bảng — đúng con số người ta liếc nhiều nhất
-     lại bị làm nhạt. Giờ chỉ mờ đúng một dải hẹp ngay trên nút. */
+     lại bị làm nhạt. Giờ chỉ mờ đúng một dải hẹp ngay trên khung chat. */
   padding-top: var(--s2);
   background: linear-gradient(to bottom, transparent, var(--bg) 0.75rem);
 }
 
-.voice-state {
-  color: var(--text-faint);
-  font-size: var(--t-xs);
-  min-height: 1rem;
-  text-align: center;
-  letter-spacing: 0.02em;
+.composer {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
 }
 
-.voice-state.live { color: var(--accent); font-weight: 650; }
+.composer-input {
+  flex: 1;
+  /* Không có dòng này thì ô nhập từ chối co lại và cả thanh tràn ngang @360px. */
+  min-width: 0;
+  min-height: 3rem;
+  padding-inline: var(--s3);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  /* ĐÚNG 16px, không dùng --t-md (15px): Safari iOS tự phóng to cả trang khi
+     focus vào ô chữ nhỏ hơn 16px, và phóng xong thì bảng điểm lệch hết. */
+  font-size: 1rem;
+}
+
+.composer-input::placeholder { color: var(--text-faint); }
+.composer-input:disabled { opacity: 0.5; }
+
+.voice-button,
+.send-button {
+  flex: none;
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--r-md);
+  font-size: var(--t-lg);
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  transition: transform 0.08s ease, background 0.15s ease;
+}
 
 .voice-button {
-  width: 100%;
-  min-height: 3.5rem;
-  border-radius: var(--r-lg);
   background: var(--accent);
   color: #08080e;
-  font-size: var(--t-md);
-  font-weight: 700;
-  letter-spacing: -0.01em;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   box-shadow: var(--shadow-2);
-  transition: transform 0.08s ease, background 0.15s ease;
 }
+
+.send-button {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.send-button:disabled { opacity: 0.4; box-shadow: none; }
 
 .voice-button:active,
 .voice-button.active { transform: scale(0.985); background: #9db1ff; }
@@ -513,6 +604,7 @@ button:disabled { cursor: not-allowed; }
 
 @media (prefers-reduced-motion: reduce) {
   .voice-button.active { animation: none; }
+  .bubble.thinking span { animation: none; opacity: 0.6; }
   * { transition-duration: 0.01ms !important; }
 }
 

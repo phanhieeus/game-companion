@@ -8,25 +8,11 @@ import { RoundsTable } from "./RoundsTable";
 import { useRoundOrder } from "./roundOrder";
 import { BackToTop } from "./BackToTop";
 import { RoundHistory } from "./RoundHistory";
-import { ProposalCard } from "./ProposalCard";
+import { Chat } from "./Chat";
+import { Composer } from "./Composer";
 import { SetupScreen } from "./SetupScreen";
 
-/** T — trạng thái phải đọc được từ xa, không phải dòng chữ xám bé tí. */
-const STATE_LABEL: Record<string, string> = {
-  idle: "",
-  listening: "Đang nghe…",
-  understanding: "Đang nghĩ…",
-  confirming: "Kiểm lại rồi bấm Ghi",
-};
-
 const EMPTY_SCOREBOARD: Scoreboard = { rows: [], roundsPlayed: 0 };
-
-/** Câu cuối của một đoạn — phần hỏi, bỏ phần liệt kê số ở trước. */
-function lastSentence(text: string | null): string | null {
-  if (!text) return null;
-  const parts = text.split(/(?<=[.?!])\s+/).filter(Boolean);
-  return parts.at(-1) ?? text;
-}
 
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -93,7 +79,7 @@ export function App() {
     [applyView, refreshUndo],
   );
 
-  const { view, startTurn, endTurn, cancelTurn, confirmByTap, retry } =
+  const { view, startTurn, endTurn, cancelTurn, confirmByTap, retry, sendText } =
     useConversation(session?.id ?? null, onAgentReply, setRoundOrder);
 
   const history = useMemo(
@@ -270,97 +256,36 @@ export function App() {
 
       <div className="spacer" />
 
-      {/* T — câu vừa nói và câu agent trả lời, tách bạch rõ. */}
-      <div className="transcript">
-        {view.transcript ? (
-          <p className={`you${listening ? " live" : ""}`}>{view.transcript}</p>
-        ) : (
-          !view.agentSays &&
-          !view.error && (
-            <p className="hint">
-              Nhấn giữ nút bên dưới rồi nói, ví dụ “Nam ăn 3, ba người kia mỗi
-              người chung 1”.
-            </p>
-          )
-        )}
+      {/* Khối hội thoại DÍNH ĐÁY màn hình, không trôi theo trang.
 
-        {view.error ? (
-          <p className="error">{view.error}</p>
-        ) : (
-          view.agentSays &&
-          view.state !== "confirming" && <p className="agent">{view.agentSays}</p>
-        )}
+          Thẻ đề xuất nằm trong mạch chat (C-024) — nhưng nếu cả mạch cuộn theo
+          trang thì chơi 16 ván xong, nút Ghi bị đẩy khỏi màn hình và phải cuộn
+          xuống mới chốt được ván. C-003 đã chốt điều ngược lại (metric PRD #3).
+          Neo cả khối xuống đáy giữ được cả hai: đề xuất ở trong mạch, mà vẫn
+          luôn trong tầm tay. */}
+      <div className="dock">
+        {/* T — cả mạch hội thoại, không chỉ câu cuối. */}
+        <Chat
+          messages={view.messages}
+          state={view.state}
+          transcript={view.transcript}
+          pendingPrompt={view.pendingPrompt}
+          proposal={view.proposal}
+          canRetry={view.canRetry}
+          onRetry={retry}
+          onAccept={() => void confirmByTap(true)}
+          onReject={() => void confirmByTap(false)}
+        />
 
-        {/* R — chạy lại đúng câu vừa nói, không bắt nói lại. */}
-        {view.canRetry && (
-          <button type="button" className="retry" onClick={retry}>
-            ↻ Thử lại câu vừa nói
-          </button>
-        )}
-      </div>
-
-      {/* Thẻ xác nhận nằm TRONG khối dính đáy màn hình cùng nút Voice.
-          Để ngoài thì thanh dính đè lên nút Ghi — nút quan trọng nhất bị che. */}
-      <div className="voice-area">
-        {view.state === "confirming" &&
-          (view.proposal ? (
-            <ProposalCard
-              rows={view.proposal}
-              /* Câu của tool ("Lan +4, Hùng −1… Ghi ván này nhé?") viết ra để
-                 ĐỌC LÊN — nghe thì cần con số. Trên màn hình thì các dòng bên
-                 dưới đã có đủ, nhắc lại thành chữ chỉ làm rối chỗ cần liếc
-                 nhanh nhất. Lấy đúng câu hỏi ở cuối làm tiêu đề. */
-              title={lastSentence(view.pendingPrompt) ?? "Ghi ván này nhé?"}
-              onAccept={() => void confirmByTap(true)}
-              onReject={() => void confirmByTap(false)}
-            />
-          ) : (
-            /* Tool không có con số nào để vẽ ("kết thúc phiên nhé?") — vẫn phải
-               có hai nút, nếu không thì người dùng kẹt ở trạng thái chờ chốt mà
-               không bấm được gì ngoài nói tiếp. */
-            <div className="proposal" role="group" aria-label="Xác nhận">
-              <div className="proposal-head">{view.pendingPrompt}</div>
-              <div className="confirm-bar">
-                <button
-                  type="button"
-                  className="yes"
-                  onClick={() => void confirmByTap(true)}
-                >
-                  Đồng ý
-                </button>
-                <button
-                  type="button"
-                  className="no"
-                  onClick={() => void confirmByTap(false)}
-                >
-                  Bỏ qua
-                </button>
-              </div>
-            </div>
-          ))}
-
-        {view.state !== "confirming" && (
-          <span className={`voice-state${listening ? " live" : ""}`}>
-            {STATE_LABEL[view.state]}
-          </span>
-        )}
-
-        <button
-          type="button"
-          className={`voice-button${listening ? " active" : ""}`}
-          disabled={busy || !canSpeak}
-          // Nhấn giữ để nói, nhả tay là dừng — không nghe liên tục.
-          onPointerDown={startTurn}
-          onPointerUp={endTurn}
-          onPointerLeave={() => listening && cancelTurn()}
-          onContextMenu={(e) => e.preventDefault()}
-        >
-          {listening
-            ? "Đang nghe — nhả tay để dừng"
-            : canSpeak
-              ? "Nhấn giữ để nói"
-              : "Trình duyệt không hỗ trợ giọng nói"}
-        </button>
+        <Composer
+          busy={busy}
+          listening={listening}
+          canSpeak={canSpeak}
+          onSend={sendText}
+          onStart={startTurn}
+          onEnd={endTurn}
+          onCancel={cancelTurn}
+        />
       </div>
 
       <BackToTop />

@@ -21,10 +21,34 @@ import { readConfirmation } from "./phrases";
 
 export type VoiceState = "idle" | "listening" | "understanding" | "confirming";
 
+/** Một bong bóng đã nằm trong mạch hội thoại. */
+export interface Bubble {
+  id: string;
+  who: "you" | "agent";
+  text: string;
+  /** Lỗi vẽ khác câu trả lời thường — cùng là lời agent nhưng không tin được. */
+  failed?: boolean;
+}
+
+let bubbleSeq = 0;
+const nextBubble = (who: Bubble["who"], text: string, failed = false): Bubble => ({
+  id: `b${++bubbleSeq}`,
+  who,
+  text,
+  failed,
+});
+
 export interface ConversationView {
   state: VoiceState;
   transcript: string;
   agentSays: string;
+  /**
+   * Cả mạch hội thoại, cũ trước mới sau — không chỉ câu cuối.
+   *
+   * Nói năm lượt rồi mà chỉ thấy lượt thứ năm thì không kiểm lại được agent đã
+   * hiểu gì; giữ lại lượt trước là điều kiện để soát bằng mắt.
+   */
+  messages: Bubble[];
   pendingPrompt: string | null;
   /**
    * T — cho NHÌN THẤY con số agent định ghi, không chỉ nghe đọc.
@@ -54,6 +78,12 @@ export function useConversation(
   const [error, setError] = useState<string | null>(null);
   const [retryable, setRetryable] = useState(false);
   const [steps, setSteps] = useState(0);
+  const [messages, setMessages] = useState<Bubble[]>([]);
+
+  const push = useCallback((who: Bubble["who"], text: string, failed = false) => {
+    if (!text) return;
+    setMessages((prev) => [...prev, nextBubble(who, text, failed)]);
+  }, []);
 
   const listenerRef = useRef<Listener | null>(null);
   // Ref chứ không state: `processUtterance` phải đọc được giá trị MỚI NHẤT ngay
@@ -94,8 +124,9 @@ export function useConversation(
         setRetryable(outcome.retryable);
       }
       setSays(text);
+      push("agent", text, outcome.type === "error");
     },
-    [onAgentReply, setRoundOrder],
+    [onAgentReply, setRoundOrder, push],
   );
 
   const fail = useCallback(
@@ -109,16 +140,20 @@ export function useConversation(
       setError(message);
       setRetryable(err instanceof ApiError ? err.retryable : true);
       setSays("");
+      push("agent", message, true);
     },
-    [],
+    [push],
   );
 
   const processUtterance = useCallback(
     async (text: string) => {
       if (!sessionId) return;
-      setTranscript(text);
+      // Câu đã chốt thì rời ô "đang nghe" và vào hẳn mạch hội thoại — để hai chỗ
+      // cùng hiện một câu thì người dùng tưởng mình nói hai lần.
+      setTranscript("");
       setLastTranscript(text);
       setError(null);
+      push("you", text);
 
       try {
         // Đang chờ "ừ/không"? Trả lời tại chỗ, khỏi tốn một lượt gọi model.
@@ -138,7 +173,19 @@ export function useConversation(
         fail(err);
       }
     },
-    [sessionId, apply, fail],
+    [sessionId, apply, fail, push],
+  );
+
+  /** Gửi bằng CHỮ — đi đúng đường của giọng nói, không thêm cửa thứ hai.
+   *
+   * Server không cần biết câu đến từ micro hay bàn phím; giữ một đường vào nghĩa
+   * là chốt xác nhận, guardrail và ghi vết áp y hệt nhau cho cả hai. */
+  const sendText = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (trimmed) void processUtterance(trimmed);
+    },
+    [processUtterance],
   );
 
   const startTurn = useCallback(() => {
@@ -190,6 +237,7 @@ export function useConversation(
     state,
     transcript,
     agentSays: says,
+    messages,
     pendingPrompt: pending?.prompt ?? null,
     proposal: pending?.rows ?? null,
     error,
@@ -198,5 +246,5 @@ export function useConversation(
     steps,
   };
 
-  return { view, startTurn, endTurn, cancelTurn, confirmByTap, retry };
+  return { view, startTurn, endTurn, cancelTurn, confirmByTap, retry, sendText };
 }

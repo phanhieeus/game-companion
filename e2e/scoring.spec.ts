@@ -96,7 +96,7 @@ test("D1: nói ghi điểm, xác nhận, bảng điểm cập nhật", async ({ 
   await expect(page.getByText("1 ván")).toBeVisible();
   expect(await readScoreboard(page)).toEqual({ Nam: 3, Hùng: -1, Lan: -1, Tú: -1 });
   // Trợ lý trả lời bằng CHỮ trên màn hình, không đọc thành tiếng (ADR 18).
-  await expect(page.locator(".agent")).toContainText("Xong ván 1");
+  await expect(page.locator(".bubble.agent:not(.thinking)").last()).toContainText("Xong ván 1");
 });
 
 /**
@@ -114,7 +114,7 @@ test("trợ lý trả lời bằng chữ, không đọc thành tiếng", async (
   await say(page, cau);
   await expect(page.locator(".proposal")).toContainText("Ghi ván này nhé?");
   await commitRound(page);
-  await expect(page.locator(".agent")).toContainText("Xong ván 1");
+  await expect(page.locator(".bubble.agent:not(.thinking)").last()).toContainText("Xong ván 1");
 
   expect(await spokenLines(page)).toEqual([]);
 });
@@ -190,7 +190,7 @@ test("hỏi bảng điểm thì trả lời thẳng, không hỏi xác nhận", 
 
   await say(page, "ai đang dẫn");
 
-  await expect(page.locator(".agent")).toContainText("Nam dẫn với 5 điểm.");
+  await expect(page.locator(".bubble.agent:not(.thinking)").last()).toContainText("Nam dẫn với 5 điểm.");
   await expect(page.getByRole("button", { name: "Ghi", exact: true })).toBeHidden();
 });
 
