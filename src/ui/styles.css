@@ -530,6 +530,10 @@ button:disabled { cursor: not-allowed; }
   gap: var(--s2);
   position: sticky;
   bottom: 0;
+  /* Cột "Ván" dính trái (C-025) có z-index riêng, nên không nói rõ thứ tự thì
+     ô Σ của nó trồi lên đè mép khung chat — thấy rõ trên ảnh production. Khối
+     neo đáy phải nằm trên MỌI thứ dính của bảng. */
+  z-index: 5;
   /* Vệt mờ phải NGẮN và dứt khoát. Trước đây nó trải dài 20% chiều cao khối
      nên phủ mờ luôn hàng Σ ở đáy bảng — đúng con số người ta liếc nhiều nhất
      lại bị làm nhạt. Giờ chỉ mờ đúng một dải hẹp ngay trên khung chat. */
