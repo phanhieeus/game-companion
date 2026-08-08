@@ -103,6 +103,14 @@ export function startListening(callbacks: ListenCallbacks): Listener | null {
 
   let finalText = "";
   let settled = false;
+  /**
+   * Phân biệt "người dùng tự huỷ" với "trình duyệt tự huỷ".
+   *
+   * Cả hai đều báo error = "aborted". Trước đây gộp làm một và im lặng bỏ qua,
+   * nên khi trình duyệt tự huỷ (ví dụ có recognition khác chen vào) thì KHÔNG
+   * callback nào chạy — UI kẹt ở "Đang nghe" vĩnh viễn, nút không dùng lại được.
+   */
+  let userAborted = false;
 
   recognition.onresult = (event) => {
     let interim = "";
@@ -119,9 +127,16 @@ export function startListening(callbacks: ListenCallbacks): Listener | null {
   recognition.onerror = (event) => {
     if (settled) return;
     settled = true;
-    const message = ERROR_MESSAGES[event.error];
-    // aborted = người dùng tự huỷ, không phải lỗi cần báo.
-    if (message !== "") {
+    // Người dùng tự huỷ thì im lặng; trình duyệt tự huỷ thì phải báo, nếu không
+    // sẽ không có gì đưa state về idle.
+    if (event.error === "aborted" && userAborted) return;
+
+    const message =
+      event.error === "aborted"
+        ? "Nhận dạng bị ngắt giữa chừng, thử lại nhé."
+        : ERROR_MESSAGES[event.error];
+
+    if (message !== undefined && message !== "") {
       const base = message ?? `Lỗi nhận dạng giọng nói (${event.error}).`;
       const needsOriginHint =
         event.error === "not-allowed" ||
@@ -149,6 +164,7 @@ export function startListening(callbacks: ListenCallbacks): Listener | null {
   return {
     stop: () => recognition.stop(),
     abort: () => {
+      userAborted = true;
       settled = true;
       recognition.abort();
     },

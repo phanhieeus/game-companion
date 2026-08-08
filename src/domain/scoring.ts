@@ -5,7 +5,14 @@
  * đừng rải logic ghi điểm ra chỗ khác (decision 0001).
  */
 
-import type { Round, ScoreEntry, Scoreboard, ScoringConfig, Session } from "./types";
+import type {
+  Round,
+  RoundEvent,
+  ScoreEntry,
+  Scoreboard,
+  ScoringConfig,
+  Session,
+} from "./types";
 import { MAX_PLAYERS, MIN_PLAYERS } from "./types";
 import type { Result } from "./errors";
 import { err, ok } from "./errors";
@@ -152,6 +159,21 @@ export function latestRecordedRound(rounds: Round[]): Round | undefined {
 
 export function totalOf(entries: ScoreEntry[] | DraftEntry[]): number {
   return entries.reduce((acc, e) => acc + e.delta, 0);
+}
+
+/**
+ * Đọc nhật ký của một ván, chịu được dữ liệu cũ chưa có field `events`.
+ *
+ * localStorage của người dùng đã có phiên ghi từ trước khi audit log tồn tại.
+ * Đọc thẳng `round.events.map(...)` sẽ nổ ngay khi mở app.
+ */
+export function roundEvents(round: Round): RoundEvent[] {
+  return round.events ?? [];
+}
+
+/** Có từng bị sửa hoặc hủy chưa — quyết định hiện dấu trên hàng. */
+export function wasModified(round: Round): boolean {
+  return roundEvents(round).some((e) => e.kind !== "created");
 }
 
 export function describeConfig(config: ScoringConfig): string {

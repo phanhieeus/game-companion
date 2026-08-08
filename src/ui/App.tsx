@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { computeScoreboard } from "../domain/scoring";
-import type { Session } from "../domain/types";
+import type { Round, Session } from "../domain/types";
 import { LocalStorageSessionRepository } from "../repository/localStorageRepository";
 import { createTools } from "../tools";
 import { useConversation } from "../conversation/useConversation";
@@ -8,7 +8,7 @@ import { isSpeechRecognitionSupported } from "../voice/speech";
 import { RoundsTable } from "./RoundsTable";
 import { useRoundOrder } from "./roundOrder";
 import { BackToTop } from "./BackToTop";
-import { ManualEntry } from "./ManualEntry";
+import { RoundHistory } from "./RoundHistory";
 import { ProposalCard } from "./ProposalCard";
 import { SetupScreen } from "./SetupScreen";
 
@@ -33,7 +33,7 @@ export function App() {
   const [setupError, setSetupError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [roundOrder, toggleRoundOrder] = useRoundOrder();
-  const [manualOpen, setManualOpen] = useState(false);
+  const [historyRound, setHistoryRound] = useState<Round | null>(null);
 
   const refresh = useCallback(() => {
     if (!session) return;
@@ -75,18 +75,35 @@ export function App() {
     setSession(repo.get(result.data.session_id) ?? null);
   };
 
-  /** Nhập tay đi qua đúng record_round như ván nói bằng giọng (ADR 4). */
-  const submitManual = (entries: { playerId: string; delta: number }[]) => {
-    if (!session) return;
+  /** Thêm ván từ bảng — vẫn qua record_round như ván nói bằng giọng (ADR 4). */
+  const addRound = (entries: { playerId: string; delta: number }[]) => {
+    if (!session) return "Không có phiên đang chơi.";
     const result = tools.record_round({
       session_id: session.id,
       entries,
       client_request_id: `manual-${Date.now()}`,
       source: "manual",
     });
-    if (!result.ok) return;
-    setManualOpen(false);
+    if (!result.ok) return result.error.message;
     refresh();
+    return null;
+  };
+
+  /** Sửa ô tại chỗ — update_round tự ghi vào nhật ký (ADR 8). */
+  const saveEdit = (
+    roundId: string,
+    entries: { playerId: string; delta: number }[],
+  ) => {
+    if (!session) return "Không có phiên đang chơi.";
+    const result = tools.update_round({
+      session_id: session.id,
+      round_id: roundId,
+      entries,
+      source: "manual",
+    });
+    if (!result.ok) return result.error.message;
+    refresh();
+    return null;
   };
 
   const undoRound = (roundId: string) => {
@@ -106,7 +123,15 @@ export function App() {
     );
   }
 
-  const busy = view.state !== "idle" && view.state !== "confirming";
+  /**
+   * Chỉ khoá nút khi máy đang BẬN THẬT (gọi Gemini, đang ghi).
+   *
+   * Trước đây khoá cả `clarifying` và `confirming` — tức là đúng lúc agent hỏi
+   * "6 điểm này ai chung?" thì nút nói bị khoá, người dùng không trả lời được.
+   * Kẹt cứng: phải bấm Hủy hoặc reload mới thoát. Cả hai trạng thái đó đều đang
+   * CHỜ người dùng nói, nên phải để nút dùng được.
+   */
+  const busy = view.state === "understanding" || view.state === "executing";
   const canSpeak = isSpeechRecognitionSupported();
   const listening = view.state === "listening";
 
@@ -178,6 +203,9 @@ export function App() {
           order={roundOrder}
           onUndo={undoRound}
           scoreboard={scoreboard}
+          onSaveEdit={saveEdit}
+          onAddRound={addRound}
+          onShowHistory={setHistoryRound}
         />
       </section>
 
@@ -229,15 +257,7 @@ export function App() {
           />
         )}
 
-        {manualOpen && view.state !== "confirming" && (
-          <ManualEntry
-            session={session}
-            onSubmit={submitManual}
-            onCancel={() => setManualOpen(false)}
-          />
-        )}
-
-        {view.state !== "confirming" && !manualOpen && (
+        {view.state !== "confirming" && (
           <span className={`voice-state${listening ? " live" : ""}`}>
             {STATE_LABEL[view.state]}
           </span>
@@ -260,19 +280,23 @@ export function App() {
               : "Trình duyệt không hỗ trợ giọng nói"}
         </button>
 
-        {/* Đường lui khi micro bị chặn hoặc hết quota — xem C-004. */}
-        {!manualOpen && view.state !== "confirming" && (
-          <button
-            type="button"
-            className="manual-open"
-            onClick={() => setManualOpen(true)}
-          >
-            Nhập tay
-          </button>
-        )}
       </div>
 
       <BackToTop />
+
+      {historyRound && (
+        <RoundHistory
+          sequenceNo={historyRound.sequenceNo}
+          events={
+            tools.get_round_events({
+              session_id: session.id,
+              round_id: historyRound.id,
+            }).data?.events ?? []
+          }
+          players={session.players}
+          onClose={() => setHistoryRound(null)}
+        />
+      )}
     </div>
   );
 }

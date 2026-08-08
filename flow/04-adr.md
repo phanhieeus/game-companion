@@ -18,11 +18,15 @@ Short. The most valuable section is what you are NOT doing and why.
 | 4 | **Nhập tay đi qua đúng `record_round` của tool layer** | Một đường ghi điểm duy nhất → validate zero-sum, idempotency, undo, lịch sử đều dùng chung. Đúng decision 0001 (mọi ghi điểm qua một điểm duy nhất, để sau gắn Event Bus) | Cho form nhập tay ghi thẳng vào repository: ngắn hơn vài dòng, nhưng tạo đường ghi điểm thứ hai bỏ qua validate — chính xác cái bug mà zero-sum sinh ra để chặn |
 | 5 | **Thứ tự bảng lưu vào localStorage riêng, không vào `Session`** | Đây là tuỳ chọn hiển thị của người cầm máy, không phải dữ liệu ván bài. Nhét vào `Session` là làm bẩn model và lẫn vào lịch sử ván | Thêm field vào `Session`: phải sửa type, repository, và mọi test đang dựng session — trả giá cho một tuỳ chọn UI |
 | 6 | **Co cỡ chữ theo số người chơi thay vì cuộn ngang** | 6 cột vẫn vừa 360px nếu giảm cỡ chữ. Cuộn ngang giữa ván bài thì người cuối cùng bị khuất — đúng người hay bị quên nhất | Cuộn ngang với cột số ván dính trái: giữ chữ to, nhưng phải thao tác thêm mới thấy đủ làng |
+| 7 | **Cho sửa ô tự do, chỉ chặn khi LƯU** (2026-08-08) | Sửa một ô thì tổng ván ≠ 0 ngay lập tức — chặn từng phím gõ thì không sửa được gì. Cho gõ thoải mái, hiện tổng lệch, chỉ ghi vào sổ khi về 0. Giữ nguyên lưới chống STT nghe nhầm số | Tự bù vào người khác: app tự đổi điểm người bạn không động tới, dễ gây cãi nhau — đúng thứ app sinh ra để tránh. Bỏ zero-sum khi sửa tay: mất lưới an toàn, bảng lệch mà không ai biết |
+| 8 | **Mọi thay đổi ván ghi vào audit log bất biến** (2026-08-08) | Cho sửa trực tiếp mà không truy được ai sửa gì lúc nào thì mất luôn khả năng giải quyết tranh cãi — đúng lý do bảng theo ván tồn tại. Log là điều kiện để mở tính năng sửa, không phải tính năng phụ | Chỉ giữ trạng thái hiện tại: đơn giản hơn nhưng "ván 3 sao khác lúc nãy" thành không trả lời được |
 
 ## NOT doing in v1 (and why it's safe to skip)
 
-- **Sửa trực tiếp từng ô trong bảng** — nút Hủy cả ván + nhập tay đã đủ đường lui.
-  Sửa từng ô cần nghĩ kỹ về audit/undo, chưa đáng lúc này.
+- ~~**Sửa trực tiếp từng ô trong bảng**~~ — **ĐẢO NGƯỢC 2026-08-08**, xem
+  quyết định 7 và 8 ở bảng trên. Lý do cắt ban đầu là "cần nghĩ kỹ về audit/undo";
+  operator yêu cầu làm kèm audit log, tức là giải đúng cái lo ngại đó thay vì
+  lách qua nó. Quyết định cũ giữ lại gạch ngang làm bản ghi, không xoá.
 - **Virtualise bảng khi nhiều ván** — một phiên bài thực tế cỡ 10–40 ván, DOM
   ngần đó hàng không chậm. Tối ưu trước khi đo là lãng phí.
 - **Biểu đồ xu hướng điểm** — bảng theo ván đã cho thấy xu hướng; biểu đồ là

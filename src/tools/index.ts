@@ -11,6 +11,10 @@
 import type {
   Player,
   Round,
+  RoundEvent,
+  RoundEventEntry,
+  RoundEventKind,
+  RoundSource,
   Scoreboard,
   ScoringConfig,
   Session,
@@ -38,6 +42,36 @@ function newId(prefix: string): string {
 /** Cho test đặt lại bộ đếm để id ổn định giữa các case. */
 export function __resetIdCounter(): void {
   idCounter = 0;
+}
+
+/** Ảnh chụp điểm của một ván, để ghi vào nhật ký. */
+function snapshot(round: Round): RoundEventEntry[] {
+  return round.entries.map((e) => ({ playerId: e.playerId, delta: e.delta }));
+}
+
+/**
+ * Ghi một mục vào nhật ký của ván.
+ *
+ * Nhật ký là bất biến: chỉ thêm, không bao giờ sửa hay xoá mục cũ. Đây là điều
+ * kiện để mở tính năng sửa ô trực tiếp (ADR quyết định 8) — không có nó thì
+ * "ván 3 sao khác lúc nãy" thành câu hỏi không trả lời được.
+ */
+function appendEvent(
+  round: Round,
+  kind: RoundEventKind,
+  source: RoundSource,
+  parts: { before?: RoundEventEntry[]; after?: RoundEventEntry[] },
+): void {
+  const event: RoundEvent = {
+    id: newId("evt"),
+    kind,
+    at: new Date().toISOString(),
+    source,
+    ...(parts.before ? { before: parts.before } : {}),
+    ...(parts.after ? { after: parts.after } : {}),
+  };
+  // Dữ liệu cũ chưa có mảng events — tạo khi cần.
+  round.events = [...(round.events ?? []), event];
 }
 
 export interface Tools {
@@ -80,12 +114,20 @@ export interface Tools {
     session_id: string;
     round_id: string;
     entries: DraftEntry[];
+    source?: RoundSource;
   }): Result<{ scoreboard: Scoreboard }>;
 
   undo_round(input: {
     session_id: string;
     round_id?: string;
+    source?: RoundSource;
   }): Result<{ voided_round_id: string; scoreboard: Scoreboard }>;
+
+  /** Nhật ký thêm/sửa/xóa của một ván — xem ADR quyết định 8. */
+  get_round_events(input: {
+    session_id: string;
+    round_id: string;
+  }): Result<{ events: RoundEvent[] }>;
 
   get_scoreboard(input: { session_id: string }): Result<Scoreboard>;
 
@@ -254,13 +296,14 @@ export function createTools(repo: SessionRepository): Tools {
         })),
         ...(client_request_id ? { clientRequestId: client_request_id } : {}),
       };
+      appendEvent(round, "created", round.source, { after: snapshot(round) });
 
       session.rounds.push(round);
       repo.save(session);
       return ok({ round_id: roundId, scoreboard: computeScoreboard(session) });
     },
 
-    update_round({ session_id, round_id, entries }) {
+    update_round({ session_id, round_id, entries, source }) {
       const loaded = loadSession(session_id, true);
       if (!loaded.ok) return loaded as Result<never>;
       const session = loaded.data;
@@ -273,6 +316,9 @@ export function createTools(repo: SessionRepository): Tools {
       const validated = validateRoundEntries(session, entries);
       if (!validated.ok) return validated as Result<never>;
 
+      const before = snapshot(round);
+      const wasVoided = round.status === "voided";
+
       round.entries = validated.data.map((e) => ({
         id: newId("ent"),
         roundId: round.id,
@@ -282,11 +328,16 @@ export function createTools(repo: SessionRepository): Tools {
       // Sửa một ván đã hủy thì coi như khôi phục lại nó.
       round.status = "recorded";
 
+      appendEvent(round, wasVoided ? "restored" : "updated", source ?? "manual", {
+        before,
+        after: snapshot(round),
+      });
+
       repo.save(session);
       return ok({ scoreboard: computeScoreboard(session) });
     },
 
-    undo_round({ session_id, round_id }) {
+    undo_round({ session_id, round_id, source }) {
       const loaded = loadSession(session_id, true);
       if (!loaded.ok) return loaded as Result<never>;
       const session = loaded.data;
@@ -303,12 +354,26 @@ export function createTools(repo: SessionRepository): Tools {
       }
 
       // Hủy = đánh dấu rồi tính lại. Không bao giờ sửa tay điểm tổng.
+      const before = snapshot(target);
       target.status = "voided";
+      appendEvent(target, "voided", source ?? "manual", { before });
+
       repo.save(session);
       return ok({
         voided_round_id: target.id,
         scoreboard: computeScoreboard(session),
       });
+    },
+
+    get_round_events({ session_id, round_id }) {
+      const loaded = loadSession(session_id, false);
+      if (!loaded.ok) return loaded as Result<never>;
+
+      const round = loaded.data.rounds.find((r) => r.id === round_id);
+      if (!round) {
+        return err("ROUND_NOT_FOUND", `Không tìm thấy ván ${round_id}.`);
+      }
+      return ok({ events: round.events ?? [] });
     },
 
     get_scoreboard({ session_id }) {

@@ -26,6 +26,7 @@ shape khác, cả hai đều "xanh".
 | tool | `undo_round` | Ghi | `{ session_id, round_id? }` | `Result<{ voided_round_id, scoreboard }>` |
 | tool | `get_history` | Đọc | `{ session_id, limit? }` | `Result<{ rounds: Round[] }>` |
 | tool | `get_scoreboard` | Đọc | `{ session_id }` | `Result<Scoreboard>` |
+| tool | `get_round_events` | Đọc | `{ session_id, round_id }` | `Result<{ events: RoundEvent[] }>` |
 | http | `POST /api/interpret` | Đọc | `{ transcript, context }` | `{ intent, args }` \| `{ error }` |
 
 **Nhập tay dùng lại `record_round` với `source: "manual"`** — không thêm tool mới
@@ -36,7 +37,8 @@ shape khác, cả hai đều "xanh".
 | Kind | Name | Ghi/Đọc | Props in | Renders / calls out |
 |---|---|---|---|---|
 | component | `RoundsTable` | Đọc | `{ session: Session, rounds: Round[], order: RoundOrder, onToggleOrder: () => void, onUndo: (roundId: string) => void }` | Bảng `n+1` cột; gọi `onUndo` khi bấm hủy một ván |
-| component | `ManualEntry` | Ghi | `{ session: Session, onSubmit: (entries: DraftEntry[]) => void, onCancel: () => void }` | Form nhập số; chỉ gọi `onSubmit` khi tổng hợp lệ |
+| component | `EditableRow` | Ghi | `{ players, draft: Record<string,string>, onChange, onSave, onCancel, error }` | Hàng ô số sửa được tại chỗ; `onSave` chỉ bật khi tổng = 0 |
+| component | `RoundHistory` | Đọc | `{ events: RoundEvent[], players, onClose }` | Popup chi tiết thêm/sửa/xóa của một ván |
 | component | `Scoreboard` (gọn lại) | Đọc | `{ scoreboard: Scoreboard, mePlayerId?: string, compact?: boolean }` | Một hàng mỗi người; `compact` giảm chiều cao |
 | hook | `useRoundOrder` | Ghi+Đọc | — | `[order, toggle]`, lưu vào `localStorage` |
 
@@ -51,6 +53,17 @@ ScoreEntry { id, roundId, playerId, delta }
 Scoreboard { rows: { playerId, name, total, rank }[], roundsPlayed }
 DraftEntry { playerId, delta }
 Result<T>  { ok: true, data: T, error: null } | { ok: false, data: null, error: {code, message} }
+
+// Mới 2026-08-08 — audit log (ADR quyết định 8)
+type RoundEventKind = "created" | "updated" | "voided" | "restored"
+RoundEvent {
+  id, kind: RoundEventKind, at: ISO string,
+  source: "voice" | "manual",
+  before?: { playerId, delta }[],   // vắng khi kind = "created"
+  after?:  { playerId, delta }[],   // vắng khi kind = "voided"
+}
+// Round nhận thêm: events: RoundEvent[]
+// Dữ liệu localStorage CŨ không có field này — đọc phải chịu được `undefined`.
 
 // Mới trong vòng này — src/ui/roundOrder.ts
 type RoundOrder = "newest-last" | "newest-first"   // mặc định "newest-last"

@@ -158,3 +158,54 @@ test("R: không hiện nút thử lại khi lỗi là do người dùng nói sai
     page.getByRole("button", { name: /Thử lại câu vừa nói/ }),
   ).toBeHidden();
 });
+
+/**
+ * Regression: nói một lần rồi thả tay, UI phải về trạng thái dùng được.
+ *
+ * Lỗi cũ: `busy` tính cả `clarifying` và `confirming` → nút bị khoá đúng lúc
+ * agent đang CHỜ người dùng nói. Kẹt cứng, phải reload mới thoát.
+ */
+test("sau khi agent hỏi lại, nút nói phải dùng được ngay", async ({ page }) => {
+  await startSession(page);
+  await page.route("**/api/interpret", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        intent: "clarify",
+        args: { question: "6 điểm này ai chung?" },
+      }),
+    }),
+  );
+
+  await say(page, "Nam thắng 6");
+  await expect(page.getByText("6 điểm này ai chung?")).toBeVisible();
+
+  // Đây là chỗ hỏng: đang chờ người dùng trả lời mà nút lại khoá.
+  const voice = page.getByRole("button", { name: /Nhấn giữ để nói/ });
+  await expect(voice).toBeEnabled();
+});
+
+test("khi đang chờ xác nhận, nút nói vẫn dùng được", async ({ page }) => {
+  await startSession(page);
+  await mockRecord(page);
+
+  await say(page, "Nam ăn 3, ba người kia mỗi người chung 1");
+  await expect(page.locator(".proposal")).toBeVisible();
+
+  await expect(page.getByRole("button", { name: /Nhấn giữ để nói/ })).toBeEnabled();
+});
+
+test("nói xong rồi thả, nút trở lại chữ 'Nhấn giữ để nói'", async ({ page }) => {
+  await startSession(page);
+  await mockRecord(page);
+
+  await say(page, "Nam ăn 3, ba người kia mỗi người chung 1");
+  await page.getByRole("button", { name: "Ghi", exact: true }).click();
+
+  // Về đúng trạng thái ban đầu: chữ nút, và không còn hiệu ứng đang nghe.
+  const voice = page.getByRole("button", { name: "Nhấn giữ để nói" });
+  await expect(voice).toBeVisible();
+  await expect(voice).toBeEnabled();
+  await expect(page.locator(".voice-button.active")).toHaveCount(0);
+});

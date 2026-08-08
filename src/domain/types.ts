@@ -33,6 +33,31 @@ export interface ScoreEntry {
   delta: number;
 }
 
+/**
+ * Nhật ký thay đổi của một ván — bất biến, chỉ thêm không sửa (ADR quyết định 8).
+ *
+ * Cho sửa trực tiếp từng ô mà không truy được ai sửa gì lúc nào thì mất luôn khả
+ * năng giải quyết tranh cãi — đúng lý do bảng theo ván tồn tại. Log là điều kiện
+ * để mở tính năng sửa, không phải tính năng phụ.
+ */
+export type RoundEventKind = "created" | "updated" | "voided" | "restored";
+
+export interface RoundEventEntry {
+  playerId: string;
+  delta: number;
+}
+
+export interface RoundEvent {
+  id: string;
+  kind: RoundEventKind;
+  at: string;
+  source: RoundSource;
+  /** Vắng khi kind = "created". */
+  before?: RoundEventEntry[];
+  /** Vắng khi kind = "voided". */
+  after?: RoundEventEntry[];
+}
+
 export interface Round {
   id: string;
   sessionId: string;
@@ -41,6 +66,11 @@ export interface Round {
   createdAt: string;
   source: RoundSource;
   entries: ScoreEntry[];
+  /**
+   * Nhật ký thay đổi. Dữ liệu localStorage cũ không có field này — mọi chỗ đọc
+   * phải chịu được `undefined` (dùng `roundEvents()` trong scoring.ts).
+   */
+  events?: RoundEvent[];
   /** Chống ghi trùng khi STT/mạng lặp yêu cầu. */
   clientRequestId?: string;
 }

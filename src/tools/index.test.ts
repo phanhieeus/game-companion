@@ -229,3 +229,149 @@ describe("truy vấn", () => {
     );
   });
 });
+
+describe("nhật ký thay đổi (audit log)", () => {
+  it("ghi ván tạo mục 'created' kèm ảnh chụp sau", () => {
+    const { tools, sessionId, ids } = setup();
+    const recorded = tools.record_round({
+      session_id: sessionId,
+      entries: [
+        { playerId: ids[0]!, delta: 3 },
+        { playerId: ids[1]!, delta: -3 },
+      ],
+      source: "voice",
+    });
+
+    const events = tools.get_round_events({
+      session_id: sessionId,
+      round_id: recorded.data!.round_id,
+    }).data!.events;
+
+    expect(events).toHaveLength(1);
+    expect(events[0]!.kind).toBe("created");
+    expect(events[0]!.source).toBe("voice");
+    expect(events[0]!.before).toBeUndefined();
+    expect(events[0]!.after).toHaveLength(2);
+  });
+
+  it("sửa ván ghi 'updated' kèm cả trước lẫn sau", () => {
+    const { tools, sessionId, ids } = setup();
+    const recorded = tools.record_round({
+      session_id: sessionId,
+      entries: [
+        { playerId: ids[0]!, delta: 3 },
+        { playerId: ids[1]!, delta: -3 },
+      ],
+    });
+
+    tools.update_round({
+      session_id: sessionId,
+      round_id: recorded.data!.round_id,
+      entries: [
+        { playerId: ids[0]!, delta: 5 },
+        { playerId: ids[1]!, delta: -5 },
+      ],
+      source: "manual",
+    });
+
+    const events = tools.get_round_events({
+      session_id: sessionId,
+      round_id: recorded.data!.round_id,
+    }).data!.events;
+
+    expect(events.map((e) => e.kind)).toEqual(["created", "updated"]);
+    const updated = events[1]!;
+    expect(updated.before!.find((e) => e.playerId === ids[0])!.delta).toBe(3);
+    expect(updated.after!.find((e) => e.playerId === ids[0])!.delta).toBe(5);
+  });
+
+  it("hủy ván ghi 'voided', sửa lại ván đã hủy ghi 'restored'", () => {
+    const { tools, sessionId, ids } = setup();
+    const entries = [
+      { playerId: ids[0]!, delta: 2 },
+      { playerId: ids[1]!, delta: -2 },
+    ];
+    const recorded = tools.record_round({ session_id: sessionId, entries });
+    const roundId = recorded.data!.round_id;
+
+    tools.undo_round({ session_id: sessionId, round_id: roundId });
+    tools.update_round({ session_id: sessionId, round_id: roundId, entries });
+
+    const events = tools.get_round_events({
+      session_id: sessionId,
+      round_id: roundId,
+    }).data!.events;
+
+    expect(events.map((e) => e.kind)).toEqual(["created", "voided", "restored"]);
+    // "voided" ghi lại điểm trước khi hủy, không có "sau" vì ván bị bỏ.
+    expect(events[1]!.before).toHaveLength(2);
+    expect(events[1]!.after).toBeUndefined();
+  });
+
+  it("nhật ký chỉ thêm, không bao giờ mất mục cũ", () => {
+    const { tools, sessionId, ids } = setup();
+    const entries = (d: number) => [
+      { playerId: ids[0]!, delta: d },
+      { playerId: ids[1]!, delta: -d },
+    ];
+    const recorded = tools.record_round({
+      session_id: sessionId,
+      entries: entries(1),
+    });
+    const roundId = recorded.data!.round_id;
+
+    for (const d of [2, 3, 4]) {
+      tools.update_round({ session_id: sessionId, round_id: roundId, entries: entries(d) });
+    }
+
+    const events = tools.get_round_events({
+      session_id: sessionId,
+      round_id: roundId,
+    }).data!.events;
+    expect(events).toHaveLength(4);
+    expect(events[0]!.kind).toBe("created");
+  });
+
+  /**
+   * Regression: localStorage của người dùng đã có phiên ghi từ TRƯỚC khi audit
+   * log tồn tại. Những ván đó không có field `events` — đọc thẳng là nổ app.
+   */
+  it("chịu được ván cũ chưa có field events", () => {
+    const repo = new MemorySessionRepository();
+    const tools = createTools(repo);
+    const created = tools.create_session({ players: PLAYERS });
+    const sessionId = created.data!.session_id;
+    const ids = created.data!.scoreboard.rows.map((r) => r.playerId);
+
+    const recorded = tools.record_round({
+      session_id: sessionId,
+      entries: [
+        { playerId: ids[0]!, delta: 2 },
+        { playerId: ids[1]!, delta: -2 },
+      ],
+    });
+
+    // Mô phỏng dữ liệu cũ: xoá hẳn field events khỏi bản lưu.
+    const stored = repo.get(sessionId)!;
+    for (const round of stored.rounds) delete round.events;
+    repo.save(stored);
+
+    const events = tools.get_round_events({
+      session_id: sessionId,
+      round_id: recorded.data!.round_id,
+    });
+    expect(events.ok).toBe(true);
+    expect(events.data!.events).toEqual([]);
+
+    // Và vẫn sửa được bình thường sau đó.
+    const updated = tools.update_round({
+      session_id: sessionId,
+      round_id: recorded.data!.round_id,
+      entries: [
+        { playerId: ids[0]!, delta: 4 },
+        { playerId: ids[1]!, delta: -4 },
+      ],
+    });
+    expect(updated.ok).toBe(true);
+  });
+});

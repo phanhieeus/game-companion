@@ -543,75 +543,161 @@ button {
 .scoreboard.compact .row .rank { font-size: 0.76rem; }
 .scoreboard.compact { border-radius: 0.85rem; }
 
-/* ---------- manual entry (C-004) ---------- */
+/* ---------- inline edit + add row ---------- */
 
-.manual {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 1rem;
-  padding: 0.85rem 1rem 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
+.rounds-table td.tap { cursor: pointer; }
+.rounds-table td.tap:active { background: rgba(108, 140, 255, 0.16); }
 
-.manual-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
-.manual-head strong { white-space: nowrap; }
-.manual-hint { color: var(--muted); font-size: 0.74rem; text-align: right; }
+.rounds-table tr.editing { background: rgba(108, 140, 255, 0.1); }
 
-.manual-rows { display: flex; flex-direction: column; gap: 0.35rem; }
+.rounds-table tr.editing td { padding: 0.25rem 0.15rem; }
 
-.manual-row {
-  display: grid;
-  grid-template-columns: 1fr 5.5rem;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.mname { font-size: 0.92rem; }
-
-.manual-row input {
-  padding: 0.55rem 0.7rem;
-  border-radius: 0.55rem;
+.rounds-table tr.editing input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.4rem 0.25rem;
+  border-radius: 0.4rem;
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
   font: inherit;
+  font-size: inherit;
   font-variant-numeric: tabular-nums;
   text-align: right;
+  /* Bỏ mũi tên tăng/giảm: chật chỗ và không ai bấm trên điện thoại. */
+  appearance: textfield;
+  -moz-appearance: textfield;
 }
 
-.manual-row input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.rounds-table tr.editing input::-webkit-outer-spin-button,
+.rounds-table tr.editing input::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
 
-.manual-sum { font-size: 0.8rem; font-variant-numeric: tabular-nums; }
-.manual-sum.ok { color: var(--muted); }
-.manual-sum.bad { color: var(--warn); font-weight: 600; }
+.rounds-table tr.editing input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
 
-.confirm-bar button:disabled { background: var(--surface-2); color: var(--muted); cursor: not-allowed; }
-
-.manual-open {
-  padding: 0.6rem;
-  border-radius: 0.7rem;
+.edit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border-top: 1px solid var(--border);
   background: var(--surface-2);
+}
+
+.edit-sum { font-size: 0.76rem; font-variant-numeric: tabular-nums; }
+.edit-sum.ok { color: var(--positive); }
+.edit-sum.bad { color: var(--warn); font-weight: 600; }
+
+.edit-actions { display: flex; gap: 0.4rem; }
+
+.edit-actions button {
+  padding: 0.42rem 0.85rem;
+  border-radius: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.edit-actions .save { background: var(--positive); color: #06240f; }
+.edit-actions .save:disabled { background: var(--surface); color: var(--muted); }
+.edit-actions .cancel { background: var(--surface); color: var(--muted); }
+
+.add-row {
+  width: 100%;
+  padding: 0.6rem;
+  border-top: 1px solid var(--border);
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.84rem;
   font-weight: 500;
 }
 
-/* ---------- rank row + leader column (C-005) ---------- */
+.add-row:active { background: var(--surface-2); }
 
-.rounds-table .rank-row td,
-.rounds-table .rank-row th {
-  border-top: none;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 600;
-  padding-top: 0.1rem;
-  padding-bottom: 0.55rem;
+/* Ván từng bị sửa: cả ô số ván là nút, đủ to để bấm bằng ngón tay. */
+.rounds-table .seq-button {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  width: 100%;
+  min-height: 1.9rem;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
 }
 
-.rounds-table thead th.me { color: var(--accent); }
-.rounds-table thead th .me { color: var(--accent); font-weight: 700; }
-.rounds-table .leader-col { color: var(--accent); }
-.rounds-table thead th.leader-col { color: var(--accent); }
+.rounds-table .seq-button:active { color: var(--warn); }
+
+.ev-dot {
+  color: var(--warn);
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+/* ---------- round history sheet ---------- */
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 20;
+}
+
+.sheet {
+  width: 100%;
+  max-width: 34rem;
+  max-height: 78dvh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 1rem 1rem 0 0;
+  padding: 0.9rem 1rem calc(1.1rem + env(safe-area-inset-bottom));
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.sheet-empty { color: var(--muted); font-size: 0.88rem; line-height: 1.5; }
+
+.sheet-list { list-style: none; display: flex; flex-direction: column; gap: 0.7rem; }
+
+.sheet-list li {
+  border-left: 2px solid var(--border);
+  padding-left: 0.7rem;
+}
+
+.ev-head { display: flex; align-items: baseline; gap: 0.5rem; }
+
+.ev-kind { font-size: 0.85rem; font-weight: 600; }
+.ev-kind.k-created { color: var(--positive); }
+.ev-kind.k-updated { color: var(--warn); }
+.ev-kind.k-voided { color: var(--negative); }
+.ev-kind.k-restored { color: var(--accent); }
+
+.ev-meta { color: var(--muted); font-size: 0.74rem; }
+
+.ev-changes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.7rem;
+  margin-top: 0.25rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ev-change s { color: var(--negative); opacity: 0.8; }
+.ev-change b { color: var(--positive); }

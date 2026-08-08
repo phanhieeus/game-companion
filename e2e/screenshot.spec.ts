@@ -96,11 +96,17 @@ test("C-003/C-004 done-evidence", async ({ page }) => {
   // C-003: không fullPage — chứng minh đúng những gì thấy trong 1 màn hình.
   await page.screenshot({ path: "screenshots/9-single-table.png" });
 
-  // C-004: form nhập tay đang mở với số đã gõ.
-  await page.getByRole("button", { name: "Nhập tay" }).click();
-  await page.getByLabel("Điểm của Nam").fill("3");
-  await page.getByLabel("Điểm của Hùng").fill("-1");
-  await page.getByLabel("Điểm của Lan").fill("-1");
+  // Sửa ô tại chỗ: bấm vào ô mở hàng ra sửa.
+  await page.locator(".rounds-table tbody tr").first().locator("td.tap").first().click();
+  await page.getByLabel("Điểm của Nam").fill("4");
+  await page.screenshot({ path: "screenshots/10-edit-cell.png" });
+  await page.getByRole("button", { name: "Hủy", exact: true }).click();
+
+  // Nhật ký một ván đã sửa.
+  await page.locator(".rounds-table tbody tr").first().locator("td.tap").first().click();
+  await page.getByLabel("Điểm của Nam").fill("4");
   await page.getByLabel("Điểm của Tú").fill("-1");
-  await page.screenshot({ path: "screenshots/8-manual.png" });
+  await page.getByRole("button", { name: "Lưu", exact: true }).click();
+  await page.getByRole("button", { name: "Lịch sử ván 1" }).click();
+  await page.screenshot({ path: "screenshots/11-history.png" });
 });
