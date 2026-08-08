@@ -13,10 +13,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 load_dotenv()
 
 from .agent.gemini import api_key, model_name  # noqa: E402
+from .domain.models import MAX_PLAYERS, MIN_PLAYERS  # noqa: E402
 from .agent.memory import FileFactStore  # noqa: E402
 from .repository.file import FileSessionRepository  # noqa: E402
 from .routes.agent import build_agent_router  # noqa: E402
@@ -35,9 +37,25 @@ app.include_router(build_session_router(tools, repo), prefix="/api/sessions")
 app.include_router(build_agent_router(tools, repo, fact_store), prefix="/api/sessions")
 
 
-@app.get("/api/health")
+class Health(BaseModel):
+    ok: bool
+    model: str
+    hasKey: bool
+    #: Giới hạn số người chơi — server là nơi ÁP, client chỉ hiện form theo.
+    #: Trả về đây để client khỏi khai lại một con số đã có chủ.
+    minPlayers: int
+    maxPlayers: int
+
+
+@app.get("/api/health", response_model=Health)
 def health() -> dict:
-    return {"ok": True, "model": model_name(), "hasKey": bool(api_key())}
+    return {
+        "ok": True,
+        "model": model_name(),
+        "hasKey": bool(api_key()),
+        "minPlayers": MIN_PLAYERS,
+        "maxPlayers": MAX_PLAYERS,
+    }
 
 
 if os.environ.get("E2E_RESET") == "1":

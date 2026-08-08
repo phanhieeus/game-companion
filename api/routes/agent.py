@@ -19,7 +19,8 @@ from ..agent.types import AgentMessage, ToolCall, ToolContext
 from ..domain.scoring import compute_scoreboard
 from ..repository.base import SessionRepository
 from ..tools import Tools
-from .sessions import error_response
+from .sessions import ERRORS, error_response
+from .schemas import AgentReply, ErrorBody
 
 
 @dataclass
@@ -115,7 +116,12 @@ def build_agent_router(
             "uiIntents": intents,
         }
 
-    @router.post("/{session_id}/agent")
+    @router.post(
+        "/{session_id}/agent",
+        response_model=AgentReply,
+        response_model_exclude_none=True,
+        responses=ERRORS,
+    )
     async def speak(session_id: str, body: dict = Body(default={})):
         state = state_of(session_id)
         ctx = context_for(session_id, state)
@@ -136,7 +142,13 @@ def build_agent_router(
 
         return reply(session_id, state, result)
 
-    @router.post("/{session_id}/agent/confirm")
+    @router.post(
+        "/{session_id}/agent/confirm",
+        response_model=AgentReply,
+        response_model_exclude_none=True,
+        # 409 khi không có gì đang chờ chốt — chuyện bình thường, không phải hỏng.
+        responses={**ERRORS, 409: {"model": ErrorBody}},
+    )
     async def confirm(session_id: str, body: dict = Body(default={})):
         state = state_of(session_id)
         ctx = context_for(session_id, state)

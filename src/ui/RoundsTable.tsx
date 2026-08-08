@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Round, Scoreboard, Session } from "../../shared/types";
-import { wasModified } from "../../shared/types";
-import type { DraftEntry } from "../../shared/types";
+import type { Round, Scoreboard, Session } from "../api/model";
+import { wasModified } from "../api/model";
+import type { DraftEntry } from "../api/model";
 
 export type RoundOrder = "newest-last" | "newest-first";
 

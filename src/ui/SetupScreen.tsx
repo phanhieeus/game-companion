@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { MAX_PLAYERS, MIN_PLAYERS } from "../../shared/types";
 import {
   currentOrigin,
   isSecureOrigin,
@@ -9,15 +8,18 @@ import {
 interface Props {
   onCreate: (players: string[], meName: string | null) => void;
   error: string | null;
+  /** Giới hạn do SERVER áp (ADR 17) — client chỉ hiện form theo, không tự khai. */
+  minPlayers: number;
+  maxPlayers: number;
 }
 
-export function SetupScreen({ onCreate, error }: Props) {
+export function SetupScreen({ onCreate, error, minPlayers, maxPlayers }: Props) {
   const [names, setNames] = useState<string[]>(["", "", "", ""]);
   const [meIndex, setMeIndex] = useState(0);
 
   const filled = names.map((n) => n.trim()).filter(Boolean);
   const canStart =
-    filled.length >= MIN_PLAYERS && filled.length === new Set(filled).size;
+    filled.length >= minPlayers && filled.length === new Set(filled).size;
 
   const setName = (index: number, value: string) => {
     setNames((prev) => prev.map((n, i) => (i === index ? value : n)));
@@ -28,7 +30,7 @@ export function SetupScreen({ onCreate, error }: Props) {
       <div>
         <h2>Phiên chơi mới</h2>
         <p>
-          Nhập tên {MIN_PLAYERS}–{MAX_PLAYERS} người chơi. Tính điểm trực tiếp,
+          Nhập tên {minPlayers}–{maxPlayers} người chơi. Tính điểm trực tiếp,
           tổng mỗi ván bằng 0.
         </p>
       </div>
@@ -73,7 +75,7 @@ export function SetupScreen({ onCreate, error }: Props) {
           >
             {meIndex === index ? "★ tôi" : "☆"}
           </button>
-          {names.length > MIN_PLAYERS && (
+          {names.length > minPlayers && (
             <button
               type="button"
               className="remove"
@@ -89,7 +91,7 @@ export function SetupScreen({ onCreate, error }: Props) {
         </div>
       ))}
 
-      {names.length < MAX_PLAYERS && (
+      {names.length < maxPlayers && (
         <button
           type="button"
           className="ghost"
@@ -108,7 +110,7 @@ export function SetupScreen({ onCreate, error }: Props) {
         Bắt đầu chơi
       </button>
 
-      {!canStart && filled.length >= MIN_PLAYERS && (
+      {!canStart && filled.length >= minPlayers && (
         <p>Tên người chơi không được trùng nhau.</p>
       )}
     </div>

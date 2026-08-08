@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useRef, useState } from "react";
-import type { AgentOutcome, ProposalRow, RoundOrder } from "../../shared/types";
+import type { AgentOutcome, ProposalRow, RoundOrder } from "../api/model";
 import { ApiError, confirmPending, sendUtterance, type AgentReply } from "../api/client";
 import { startListening, speak, stopSpeaking, type Listener } from "../voice/speech";
 import { readConfirmation } from "./phrases";

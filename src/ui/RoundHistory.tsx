@@ -1,4 +1,4 @@
-import type { Player, RoundEvent } from "../../shared/types";
+import type { Player, RoundEvent } from "../api/model";
 
 interface Props {
   sequenceNo: number;

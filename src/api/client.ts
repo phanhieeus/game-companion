@@ -1,10 +1,10 @@
 import type {
-  AgentOutcome,
+  AgentReply,
   RoundEvent,
-  RoundOrder,
   Scoreboard,
   Session,
-} from "../../shared/types";
+  SessionView,
+} from "./model";
 
 /**
  * Chỗ DUY NHẤT trong client biết HTTP tồn tại (ADR 13).
@@ -14,19 +14,7 @@ import type {
  * file này, và không component nào phải biết mình đang chờ mạng.
  */
 
-/** Phiên và bảng điểm luôn về cùng nhau — client KHÔNG tự tính điểm nữa. */
-export interface SessionView {
-  session: Session;
-  scoreboard: Scoreboard;
-}
-
-export interface AgentReply extends SessionView {
-  outcome: AgentOutcome;
-  /** Agent nghĩ mấy bước — mỗi bước là một lượt gọi Gemini. */
-  steps: number;
-  /** Việc client phải tự làm: thứ tự bảng là tuỳ chọn hiển thị (ADR 5). */
-  uiIntents: { roundOrder?: RoundOrder };
-}
+export type { AgentReply, SessionView };
 
 /**
  * Lỗi có mã, để UI phân biệt "nói sai luật" với "mất mạng".
@@ -83,6 +71,18 @@ async function call<T>(
 
   return (await response.json()) as T;
 }
+
+/* ── Máy chủ ──────────────────────────────────────────────────────────── */
+
+/** Giới hạn số người chơi do SERVER quyết — client chỉ hiện form theo. */
+export const health = () =>
+  call<{
+    ok: boolean;
+    model: string;
+    hasKey: boolean;
+    minPlayers: number;
+    maxPlayers: number;
+  }>("/health");
 
 /* ── Phiên ────────────────────────────────────────────────────────────── */
 

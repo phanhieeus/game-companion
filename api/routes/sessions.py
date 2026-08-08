@@ -17,6 +17,14 @@ from ..domain.models import DraftEntry
 from ..domain.scoring import compute_scoreboard
 from ..repository.base import SessionRepository
 from ..tools import Tools
+from .schemas import (
+    ActiveView,
+    ErrorBody,
+    EventsView,
+    LabeledView,
+    SessionView,
+    UndoState,
+)
 
 
 def error_response(code: str, message: str, status: int = 400) -> JSONResponse:
@@ -47,6 +55,20 @@ def entries_of(raw: Any) -> list[DraftEntry]:
     ]
 
 
+#: Lỗi luật chơi trả 400 và GIỮ NGUYÊN `code` — khai vào OpenAPI để client sinh
+#: kiểu cho cả nhánh hỏng, không chỉ nhánh thành công.
+ERRORS: dict = {400: {"model": ErrorBody}, 404: {"model": ErrorBody}}
+
+#: Phần lớn endpoint trả về cùng một hình dạng: phiên + bảng điểm.
+VIEW: dict = {
+    "response_model": SessionView,
+    # `endedAt: None` phải VẮNG khỏi JSON cho khớp `field?:` của TypeScript —
+    # client phân biệt "chưa kết thúc" bằng sự vắng mặt của field.
+    "response_model_exclude_none": True,
+    "responses": ERRORS,
+}
+
+
 def build_session_router(tools: Tools, repo: SessionRepository) -> APIRouter:
     router = APIRouter()
 
@@ -66,8 +88,8 @@ def build_session_router(tools: Tools, repo: SessionRepository) -> APIRouter:
             return error_response("SESSION_NOT_FOUND", "Không có phiên này.", 404)
         return {**payload, **(extra or {})}
 
-    @router.post("")
-    @router.post("/")
+    @router.post("", **VIEW)
+    @router.post("/", **VIEW)
     def create(body: dict = Body(default={})):
         result = tools.create_session(
             players=body.get("players") or [],
@@ -77,7 +99,7 @@ def build_session_router(tools: Tools, repo: SessionRepository) -> APIRouter:
             return fail(result)
         return viewed(result.unwrap()["session_id"])
 
-    @router.get("/active")
+    @router.get("/active", response_model=ActiveView, response_model_exclude_none=False, responses=ERRORS)
     def active():
         """Mở lại app là tiếp tục phiên đang chơi — hỏi server, không hỏi máy mình."""
         found = repo.active_session()
@@ -85,11 +107,11 @@ def build_session_router(tools: Tools, repo: SessionRepository) -> APIRouter:
             return {"session": None, "scoreboard": None}
         return viewed(found.id)
 
-    @router.get("/{session_id}")
+    @router.get("/{session_id}", **VIEW)
     def get_one(session_id: str):
         return viewed(session_id)
 
-    @router.post("/{session_id}/rounds")
+    @router.post("/{session_id}/rounds", **VIEW)
     def record(session_id: str, body: dict = Body(default={})):
         result = tools.record_round(
             session_id,
@@ -99,63 +121,63 @@ def build_session_router(tools: Tools, repo: SessionRepository) -> APIRouter:
         )
         return fail(result) if not result.ok else viewed(session_id)
 
-    @router.patch("/{session_id}/rounds/{round_id}")
+    @router.patch("/{session_id}/rounds/{round_id}", **VIEW)
     def update(session_id: str, round_id: str, body: dict = Body(default={})):
         result = tools.update_round(
             session_id, round_id, entries_of(body.get("entries")), source="manual"
         )
         return fail(result) if not result.ok else viewed(session_id)
 
-    @router.delete("/{session_id}/rounds/{round_id}")
+    @router.delete("/{session_id}/rounds/{round_id}", **VIEW)
     def delete(session_id: str, round_id: str):
         result = tools.undo_round(session_id, round_id, source="manual")
         return fail(result) if not result.ok else viewed(session_id)
 
-    @router.get("/{session_id}/rounds/{round_id}/events")
+    @router.get("/{session_id}/rounds/{round_id}/events", response_model=EventsView, response_model_exclude_none=True, responses=ERRORS)
     def events(session_id: str, round_id: str):
         result = tools.get_round_events(session_id, round_id)
         if not result.ok:
             return fail(result)
         return {"events": [e.dump() for e in result.unwrap()["events"]]}
 
-    @router.post("/{session_id}/undo")
+    @router.post("/{session_id}/undo", response_model=LabeledView, response_model_exclude_none=True, responses=ERRORS)
     def undo(session_id: str):
         result = tools.undo_last(session_id)
         if not result.ok:
             return fail(result)
         return viewed(session_id, {"label": result.unwrap()["label"]})
 
-    @router.post("/{session_id}/redo")
+    @router.post("/{session_id}/redo", response_model=LabeledView, response_model_exclude_none=True, responses=ERRORS)
     def redo(session_id: str):
         result = tools.redo_last(session_id)
         if not result.ok:
             return fail(result)
         return viewed(session_id, {"label": result.unwrap()["label"]})
 
-    @router.get("/{session_id}/undo-state")
+    @router.get("/{session_id}/undo-state", response_model=UndoState, response_model_exclude_none=False, responses=ERRORS)
     def undo_state(session_id: str):
         """Nút hoàn tác/làm lại phải biết còn gì để làm không, trước khi bấm."""
         result = tools.get_undo_state(session_id)
         return fail(result) if not result.ok else result.unwrap()
 
-    @router.post("/{session_id}/players")
+    @router.post("/{session_id}/players", **VIEW)
     def add_player(session_id: str, body: dict = Body(default={})):
         result = tools.add_player(session_id, str(body.get("name", "")))
         return fail(result) if not result.ok else viewed(session_id)
 
-    @router.delete("/{session_id}/players/{player_id}")
+    @router.delete("/{session_id}/players/{player_id}", **VIEW)
     def remove_player(session_id: str, player_id: str):
         result = tools.remove_player(session_id, player_id)
         return fail(result) if not result.ok else viewed(session_id)
 
-    @router.patch("/{session_id}/settings")
+    @router.patch("/{session_id}/settings", **VIEW)
     def settings(session_id: str, body: dict = Body(default={})):
         result = tools.set_confirm_before_commit(
             session_id, bool(body.get("confirm_before_commit"))
         )
         return fail(result) if not result.ok else viewed(session_id)
 
-    @router.post("/{session_id}/end")
+    @router.post("/{session_id}/end", **VIEW)
     def end(session_id: str):
         result = tools.end_session(session_id)
         return fail(result) if not result.ok else viewed(session_id)

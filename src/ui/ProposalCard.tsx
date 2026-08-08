@@ -1,4 +1,4 @@
-import type { ProposalRow } from "../../shared/types";
+import type { ProposalRow } from "../api/model";
 
 interface Props {
   rows: ProposalRow[];

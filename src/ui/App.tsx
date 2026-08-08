@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Round, RoundEvent, Scoreboard, Session } from "../../shared/types";
+import type { Round, RoundEvent, Scoreboard, Session } from "../api/model";
 import * as api from "../api/client";
 import { ApiError, type SessionView } from "../api/client";
 import { useConversation } from "../conversation/useConversation";
@@ -42,6 +42,9 @@ export function App() {
     undo: null,
     redo: null,
   });
+  // Giới hạn số người chơi do server áp (ADR 17). Mặc định 4–5 chỉ để form vẽ
+  // được trước khi /health trả lời; server mới là nơi quyết.
+  const [limits, setLimits] = useState({ minPlayers: 4, maxPlayers: 5 });
 
   const applyView = useCallback((view: SessionView) => {
     setSession(view.session);
@@ -62,8 +65,12 @@ export function App() {
     let alive = true;
     void (async () => {
       try {
-        const { session: found, scoreboard: board } = await api.activeSession();
+        const [{ session: found, scoreboard: board }, info] = await Promise.all([
+          api.activeSession(),
+          api.health().catch(() => null),
+        ]);
         if (!alive) return;
+        if (info) setLimits({ minPlayers: info.minPlayers, maxPlayers: info.maxPlayers });
         setSession(found);
         setScoreboard(board ?? EMPTY_SCOREBOARD);
         if (found) void refreshUndo(found.id);
@@ -144,7 +151,12 @@ export function App() {
         {session?.status === "ended" && (
           <div className="ended-banner">Phiên trước đã kết thúc.</div>
         )}
-        <SetupScreen onCreate={createSession} error={setupError} />
+        <SetupScreen
+          onCreate={createSession}
+          error={setupError}
+          minPlayers={limits.minPlayers}
+          maxPlayers={limits.maxPlayers}
+        />
       </div>
     );
   }

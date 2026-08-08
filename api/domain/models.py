@@ -28,9 +28,19 @@ MAX_PLAYERS = 5
 
 
 class Base(BaseModel):
-    """Bỏ field None khi xuất JSON, cho khớp `field?:` của TypeScript."""
+    """Bỏ field None khi xuất JSON, cho khớp `field?:` của TypeScript.
 
-    model_config = ConfigDict(populate_by_name=True)
+    `json_schema_serialization_defaults_required`: field có giá trị mặc định
+    (`entries`, `players`, `rows`…) LUÔN có mặt trong response, nên phải khai là
+    bắt buộc ở schema. Không có cờ này thì kiểu sinh ra cho client đánh dấu
+    chúng là optional, và mọi chỗ đọc phải `?? []` một cách vô nghĩa — tệ hơn:
+    kiểu nói dối về hình dạng dữ liệu thật.
+    """
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_serialization_defaults_required=True,
+    )
 
     def dump(self) -> dict:
         return self.model_dump(mode="json", exclude_none=True, by_alias=True)
