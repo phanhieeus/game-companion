@@ -184,7 +184,16 @@ export function isSpeechSynthesisSupported(): boolean {
   return typeof window !== "undefined" && "speechSynthesis" in window;
 }
 
-/** Đọc câu trả lời. Cắt câu đang đọc dở nếu có câu mới — người dùng đã nói tiếp. */
+/**
+ * Đọc câu trả lời. Cắt câu đang đọc dở nếu có câu mới — người dùng đã nói tiếp.
+ *
+ * KHÔNG AI GỌI HÀM NÀY từ 2026-08-08 (C-020, ADR 18) — đây là TẮT, không phải
+ * bỏ. Operator đo trên điện thoại thật: nhận giọng nói tiếng Việt thì đạt, còn
+ * giọng đọc ra thì sai ngữ điệu, nghe giữa ván bài khó chịu hơn là đọc bằng mắt.
+ * Giữ nguyên phần thu âm ở trên; bật lại chỗ này khi có giọng đọc nghe được, chỉ
+ * cần gọi lại từ `useConversation.ts`. Đừng xoá — xoá rồi thì lần sau phải viết
+ * lại cả phần chọn giọng tiếng Việt.
+ */
 export function speak(text: string): void {
   if (!isSpeechSynthesisSupported() || !text.trim()) return;
 

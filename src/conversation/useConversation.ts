@@ -3,7 +3,8 @@
  *
  * Idle → Listening → Understanding → [Confirming] → Idle
  *
- * File này chỉ còn lo phần GIỌNG NÓI: thu âm, nhận "ừ/không", đọc câu trả lời.
+ * File này chỉ còn lo phần GIỌNG NÓI VÀO: thu âm và nhận "ừ/không". Câu trả lời
+ * đi ra bằng CHỮ, không đọc thành tiếng — giọng đọc tiếng Việt còn tệ, ADR 18.
  * Mọi quyết định làm gì nằm ở server (ADR 13) — client gửi một câu và nhận kết
  * quả, không biết tool nào tồn tại.
  *
@@ -14,7 +15,8 @@
 import { useCallback, useRef, useState } from "react";
 import type { AgentOutcome, ProposalRow, RoundOrder } from "../api/model";
 import { ApiError, confirmPending, sendUtterance, type AgentReply } from "../api/client";
-import { startListening, speak, stopSpeaking, type Listener } from "../voice/speech";
+// KHÔNG import `speak`: từ C-020 trợ lý chỉ trả lời bằng chữ — xem ADR 18.
+import { startListening, type Listener } from "../voice/speech";
 import { readConfirmation } from "./phrases";
 
 export type VoiceState = "idle" | "listening" | "understanding" | "confirming";
@@ -58,10 +60,6 @@ export function useConversation(
   // trong cùng một lượt, trước khi React kịp render lại.
   const pendingRef = useRef(false);
 
-  const say = useCallback((text: string) => {
-    if (text) speak(text);
-  }, []);
-
   /** Áp kết quả một lượt agent lên màn hình. */
   const apply = useCallback(
     (reply: AgentReply) => {
@@ -77,7 +75,6 @@ export function useConversation(
         setPending({ prompt: outcome.prompt, rows: outcome.rows });
         setSays(outcome.prompt);
         setState("confirming");
-        say(outcome.prompt);
         return;
       }
 
@@ -97,9 +94,8 @@ export function useConversation(
         setRetryable(outcome.retryable);
       }
       setSays(text);
-      say(text);
     },
-    [onAgentReply, setRoundOrder, say],
+    [onAgentReply, setRoundOrder],
   );
 
   const fail = useCallback(
@@ -113,9 +109,8 @@ export function useConversation(
       setError(message);
       setRetryable(err instanceof ApiError ? err.retryable : true);
       setSays("");
-      say(message);
     },
-    [say],
+    [],
   );
 
   const processUtterance = useCallback(
@@ -150,7 +145,6 @@ export function useConversation(
     if (!sessionId) return;
     setError(null);
     setTranscript("");
-    stopSpeaking();
 
     listenerRef.current = startListening({
       onPartial: setTranscript,
@@ -168,7 +162,6 @@ export function useConversation(
   const cancelTurn = useCallback(() => {
     listenerRef.current?.abort();
     listenerRef.current = null;
-    stopSpeaking();
     setState(pendingRef.current ? "confirming" : "idle");
   }, []);
 

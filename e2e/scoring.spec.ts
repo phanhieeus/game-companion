@@ -95,7 +95,28 @@ test("D1: nói ghi điểm, xác nhận, bảng điểm cập nhật", async ({ 
 
   await expect(page.getByText("1 ván")).toBeVisible();
   expect(await readScoreboard(page)).toEqual({ Nam: 3, Hùng: -1, Lan: -1, Tú: -1 });
-  expect((await spokenLines(page)).at(-1)).toContain("Xong ván 1");
+  // Trợ lý trả lời bằng CHỮ trên màn hình, không đọc thành tiếng (ADR 18).
+  await expect(page.locator(".agent")).toContainText("Xong ván 1");
+});
+
+/**
+ * Canh chừng chuyện đọc thành tiếng quay lại mà không ai để ý (C-020, ADR 18).
+ *
+ * Đây là chỗ DUY NHẤT còn dùng `spokenLines`, và nó dùng để chứng minh cái
+ * NGƯỢC LẠI với ngày xưa: log giọng đọc phải rỗng. Một lượt nói đủ dài — có
+ * hỏi xác nhận, có chốt, có câu trả lời cuối — mà máy vẫn im.
+ */
+test("trợ lý trả lời bằng chữ, không đọc thành tiếng", async ({ page }) => {
+  await startSession(page);
+  const cau = "Nam ăn 3, ba người kia mỗi người chung 1";
+  await mockRound(page, cau, record(["Nam", 3], ["Hùng", -1], ["Lan", -1], ["Tú", -1]));
+
+  await say(page, cau);
+  await expect(page.locator(".proposal")).toContainText("Ghi ván này nhé?");
+  await commitRound(page);
+  await expect(page.locator(".agent")).toContainText("Xong ván 1");
+
+  expect(await spokenLines(page)).toEqual([]);
 });
 
 test("từ chối xác nhận thì không ghi gì", async ({ page }) => {
@@ -169,11 +190,8 @@ test("hỏi bảng điểm thì trả lời thẳng, không hỏi xác nhận", 
 
   await say(page, "ai đang dẫn");
 
-  // Đợi câu trả lời hiện lên rồi mới đọc log giọng nói — nếu không thì đang
-  // kiểm một thời điểm mà agent còn chưa trả lời xong.
-  await expect(page.getByText("Nam dẫn với 5 điểm.")).toBeVisible();
+  await expect(page.locator(".agent")).toContainText("Nam dẫn với 5 điểm.");
   await expect(page.getByRole("button", { name: "Ghi", exact: true })).toBeHidden();
-  expect((await spokenLines(page)).at(-1)).toContain("Nam dẫn với 5 điểm");
 });
 
 test("hủy ván thì bảng điểm quay lại như trước", async ({ page }) => {
