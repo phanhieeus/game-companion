@@ -27,6 +27,10 @@ services:
       # Đặt TAY trong dashboard Render. Không bao giờ commit (decision 0002).
       - key: GEMINI_API_KEY
         sync: false
+      # Chìa cho trang quan sát (C-023). Không đặt thì /api/admin/* KHÔNG TỒN
+      # TẠI — trang này lộ nguyên văn prompt và dữ liệu phiên của người khác.
+      - key: ADMIN_TOKEN
+        sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: ghi-diem-db

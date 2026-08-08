@@ -691,3 +691,153 @@ button:disabled { cursor: not-allowed; }
 @media (min-width: 30rem) {
   .app { padding: var(--s4); gap: var(--s4); }
 }
+
+/* ── Trang quan sát agent (C-023) ────────────────────────────────────────
+   Đây là màn hình cho người phát triển đọc log, không phải cho người chơi:
+   ưu tiên mật độ chữ và đọc được nhiều, không ưu tiên ngón tay to. */
+
+.adm {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--s4);
+  color: var(--text);
+}
+
+.adm-top { display: flex; align-items: center; justify-content: space-between; }
+.adm h1 { font-size: var(--t-lg); margin: 0; }
+.adm h2 { font-size: var(--t-xs); color: var(--text-dim); margin: 0 0 var(--s2); }
+
+.adm-btn {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--s2) var(--s3);
+  cursor: pointer;
+}
+
+.adm-error { color: var(--danger); }
+.adm-dim { color: var(--text-faint); font-size: var(--t-xs); }
+.adm-tiny { font-size: 0.65rem; }
+
+.adm-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--s3);
+  margin: var(--s3) 0;
+  font-size: var(--t-xs);
+}
+.adm-stat b { color: var(--text); font-size: var(--t-sm); }
+.adm-chip {
+  display: inline-block;
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  padding: 1px var(--s2);
+  margin-left: var(--s1);
+}
+.adm-chip-warn { background: color-mix(in oklab, var(--danger) 22%, var(--surface-2)); }
+
+.adm-body { display: grid; grid-template-columns: 16rem 1fr; gap: var(--s4); }
+@media (max-width: 48rem) { .adm-body { grid-template-columns: 1fr; } }
+
+.adm-sess {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--s2);
+  margin-bottom: var(--s2);
+  color: var(--text);
+  cursor: pointer;
+}
+.adm-sess.on { border-color: var(--accent); background: var(--surface-2); }
+.adm-sess-who { font-weight: 600; font-size: var(--t-sm); }
+
+.adm-turn {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--s3);
+  margin-bottom: var(--s3);
+}
+.adm-turn-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-bottom: var(--s2);
+}
+.adm-said { font-weight: 600; }
+.adm-ms { color: var(--text-faint); font-size: var(--t-xs); }
+
+.adm-outcome {
+  font-size: var(--t-xs);
+  border-radius: var(--r-sm);
+  padding: 1px var(--s2);
+  background: var(--surface-2);
+}
+.adm-final { color: var(--pos); }
+.adm-error-outcome, .adm-blocked { color: var(--danger); }
+.adm-confirm { color: var(--accent); }
+
+.adm-guards { display: flex; gap: var(--s2); flex-wrap: wrap; margin-bottom: var(--s2); }
+.adm-guard {
+  font-size: var(--t-xs);
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 15%, transparent);
+  border-radius: var(--r-sm);
+  padding: 1px var(--s2);
+}
+
+.adm-step {
+  border-left: 2px solid var(--border);
+  padding-left: var(--s3);
+  margin: var(--s2) 0;
+}
+.adm-step-head { display: flex; gap: var(--s2); align-items: baseline; }
+.adm-step-no { font-size: var(--t-xs); color: var(--text-dim); font-weight: 650; }
+
+.adm-line { display: flex; gap: var(--s2); margin: var(--s1) 0; font-size: var(--t-sm); }
+.adm-tag {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 1px var(--s1);
+  border-radius: var(--r-sm);
+  height: fit-content;
+  flex: none;
+}
+.adm-thought { background: color-mix(in oklab, var(--accent) 25%, transparent); }
+.adm-action { background: color-mix(in oklab, var(--pos) 25%, transparent); }
+.adm-args { color: var(--text-dim); word-break: break-all; }
+
+.adm-fold { margin: var(--s1) 0; }
+.adm-fold-head {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: var(--t-xs);
+  font-weight: 650;
+  cursor: pointer;
+  padding: 0;
+}
+.adm-pre {
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  padding: var(--s2);
+  font-size: var(--t-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 22rem;
+  overflow: auto;
+  margin: var(--s1) 0 0;
+}
+.adm-empty { color: var(--text-faint); font-size: var(--t-xs); font-style: italic; }

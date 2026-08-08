@@ -23,6 +23,7 @@ from .agent.gemini import api_key, model_name  # noqa: E402
 from .domain.models import MAX_PLAYERS, MIN_PLAYERS  # noqa: E402
 from .agent.memory import FileFactStore  # noqa: E402
 from .repository.file import FileSessionRepository  # noqa: E402
+from .routes.admin import admin_token  # noqa: E402
 from .routes.agent import build_agent_router  # noqa: E402
 from .routes.sessions import build_session_router  # noqa: E402
 from .tools import create_tools  # noqa: E402
@@ -72,6 +73,18 @@ class Health(BaseModel):
     maxPlayers: int
 
 
+# Trang quan sát chỉ TỒN TẠI khi có ADMIN_TOKEN (C-023).
+#
+# Không đặt biến thì route không được đăng ký — `/api/admin/*` trả 404 y như mọi
+# đường dẫn không có thật. Khác hẳn "có nhưng chặn": route trả 401 là đã thú
+# nhận nó tồn tại, và người dò biết mình đang gõ đúng cửa.
+if admin_token():
+    from .routes.admin import build_admin_router
+
+    app.include_router(build_admin_router(trace_store, repo), prefix="/api/admin")
+    print("[api] trang admin BẬT (có ADMIN_TOKEN)", file=sys.stderr, flush=True)
+
+
 @app.get("/api/health", response_model=Health)
 def health() -> dict:
     return {
@@ -112,12 +125,26 @@ if DIST.is_dir():
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa(full_path: str):
-        """Mọi đường dẫn không phải /api/* đều trả index.html.
+        """Mọi đường dẫn KHÔNG phải /api/* đều trả index.html.
 
-        Route này khai SAU tất cả route API nên không nuốt mất chúng. Đường dẫn
-        sâu phải trả index.html chứ không phải 404: tải lại trang ở bất kỳ đâu
-        cũng phải mở được app.
+        Đường dẫn sâu phải trả index.html chứ không phải 404: tải lại trang ở
+        bất kỳ đâu cũng phải mở được app.
+
+        Nhưng `/api/*` thì tuyệt đối không: route này khai sau tất cả route API
+        nên nó chỉ nhận những đường `/api/...` KHÔNG TỒN TẠI — và trả index.html
+        cho chúng là nói dối hai lần. Client gọi nhầm endpoint sẽ nhận HTML với
+        mã 200 rồi chết lúc parse JSON, còn người dò `/api/admin/*` trên máy chủ
+        chưa bật quan sát lại thấy 200 như thể route có thật.
         """
+        if full_path.startswith("api/"):
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "error": {"code": "NOT_FOUND", "message": "Không có đường dẫn này."},
+                    "retryable": False,
+                },
+            )
+
         candidate = DIST / full_path
         if full_path and candidate.is_file():
             return FileResponse(candidate)
