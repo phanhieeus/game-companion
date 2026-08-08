@@ -12,7 +12,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 load_dotenv()
@@ -26,10 +27,26 @@ from .routes.sessions import build_session_router  # noqa: E402
 from .tools import create_tools  # noqa: E402
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "data"))
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-repo = FileSessionRepository(DATA_DIR / "sessions.json")
+# Có CSDL thì dùng, không thì ghi ra đĩa (ADR 14 sửa ở C-017).
+#
+# Giữ được cả hai vì `SessionRepository` là Protocol từ decision 0001. Nhờ vậy
+# `npm run dev` chạy được khi không có Postgres, còn Render — nơi đĩa là tạm
+# thời — thì dữ liệu không bốc hơi sau mỗi lần redeploy.
+if DATABASE_URL:
+    from .agent.pgmemory import PgFactStore
+    from .repository.postgres import PgSessionRepository
+
+    repo = PgSessionRepository(DATABASE_URL)
+    fact_store = PgFactStore(DATABASE_URL)
+    print("[api] kho: Postgres", flush=True)
+else:
+    repo = FileSessionRepository(DATA_DIR / "sessions.json")
+    fact_store = FileFactStore(DATA_DIR / "memory.json")
+    print(f"[api] kho: file trong {DATA_DIR}", flush=True)
+
 tools = create_tools(repo)
-fact_store = FileFactStore(DATA_DIR / "memory.json")
 
 app = FastAPI(title="Ghi điểm", version="1.0.0")
 
@@ -71,6 +88,29 @@ if os.environ.get("E2E_RESET") == "1":
         return {"ok": True}
 
     print("[api] E2E_RESET đang BẬT — có route xoá sạch dữ liệu.", flush=True)
+
+
+# ── Phục vụ web đã build (C-018) ────────────────────────────────────────────
+#
+# Local vẫn hai tiến trình vì vite có hot reload; production một tiến trình cho
+# gọn và để cùng origin — khỏi CORS, khỏi cấu hình proxy.
+DIST = Path(__file__).resolve().parent.parent / "dist"
+
+if DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa(full_path: str):
+        """Mọi đường dẫn không phải /api/* đều trả index.html.
+
+        Route này khai SAU tất cả route API nên không nuốt mất chúng. Đường dẫn
+        sâu phải trả index.html chứ không phải 404: tải lại trang ở bất kỳ đâu
+        cũng phải mở được app.
+        """
+        candidate = DIST / full_path
+        if full_path and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(DIST / "index.html")
 
 
 @app.exception_handler(Exception)

@@ -1,0 +1,40 @@
+# Deploy lên Render (C-018, sửa ADR quyết định 3).
+#
+# Vì sao deploy bây giờ: giả định rủi ro nhất của cả dự án — độ chính xác nhận
+# dạng giọng nói tiếng Việt — cần HTTPS thật mới đo được trên điện thoại. Đến
+# giờ vẫn chưa đo được lần nào, vì `adb reverse` chỉ dùng được với đúng một máy
+# cắm dây.
+#
+# Một tiến trình phục vụ cả API lẫn web: cùng origin nên không cần CORS.
+
+services:
+  - type: web
+    name: ghi-diem
+    runtime: python
+    plan: free
+    region: singapore # gần người dùng thật nhất — cả nhóm ngồi ở Việt Nam
+    buildCommand: |
+      pip install -r requirements.txt
+      npm ci
+      npm run build
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: NODE_VERSION
+        value: "22"
+      # Đặt TAY trong dashboard Render. Không bao giờ commit (decision 0002).
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ghi-diem-db
+          property: connectionString
+
+databases:
+  # Đĩa của Render free là tạm thời — file JSON sẽ bị xoá mỗi lần redeploy.
+  # Không có CSDL thì người dùng mất sạch phiên mà không hề được báo (C-017).
+  - name: ghi-diem-db
+    plan: free
+    region: singapore
