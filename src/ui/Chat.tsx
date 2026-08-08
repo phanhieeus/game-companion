@@ -45,13 +45,27 @@ export function Chat({
   onReject,
 }: Props) {
   const boxRef = useRef<HTMLDivElement>(null);
+  const askRef = useRef<HTMLDivElement>(null);
 
   // Lượt mới luôn phải nằm trong tầm mắt — khung có chiều cao hữu hạn nên không
   // tự cuộn thì câu trả lời mới rơi xuống dưới mép, người dùng tưởng agent câm.
+  //
+  // Nhưng cuộn xuống ĐÁY chỉ đúng khi khối cuối thấp hơn khung. Thẻ đề xuất bốn
+  // người thì CAO HƠN, và cuộn đáy cắt mất phần trên của nó — trên production
+  // đã thấy tận mắt: dòng "Lan +2", đúng con số lớn nhất, nằm ngoài mép trên,
+  // người dùng bấm Ghi mà chưa từng nhìn thấy nó. Thứ đang chờ quyết định phải
+  // đọc được TỪ ĐẦU, nên nó neo mép TRÊN; còn lại mới neo mép dưới.
   useEffect(() => {
     const box = boxRef.current;
-    if (box) box.scrollTop = box.scrollHeight;
-  }, [messages.length, state, transcript, proposal]);
+    if (!box) return;
+    const ask = askRef.current;
+    if (!ask) {
+      box.scrollTop = box.scrollHeight;
+      return;
+    }
+    box.scrollTop +=
+      ask.getBoundingClientRect().top - box.getBoundingClientRect().top;
+  }, [messages.length, state, transcript, proposal, pendingPrompt]);
 
   const empty = messages.length === 0 && !transcript;
 
@@ -84,32 +98,35 @@ export function Chat({
         </div>
       )}
 
-      {state === "confirming" &&
-        (proposal ? (
-          <ProposalCard
-            rows={proposal}
-            /* Câu của tool ("Lan +4, Hùng −1… Ghi ván này nhé?") viết ra để ĐỌC
-               LÊN — nghe thì cần con số. Trên màn hình các dòng bên dưới đã có
-               đủ, nhắc lại thành chữ chỉ làm rối chỗ cần liếc nhanh nhất. */
-            title={lastSentence(pendingPrompt) ?? "Ghi ván này nhé?"}
-            onAccept={onAccept}
-            onReject={onReject}
-          />
-        ) : (
-          /* Tool không có con số nào để vẽ ("kết thúc phiên nhé?") — vẫn phải có
-             hai nút, nếu không người dùng kẹt ở trạng thái chờ chốt. */
-          <div className="proposal" role="group" aria-label="Xác nhận">
-            <div className="proposal-head">{pendingPrompt}</div>
-            <div className="confirm-bar">
-              <button type="button" className="yes" onClick={onAccept}>
-                Đồng ý
-              </button>
-              <button type="button" className="no" onClick={onReject}>
-                Bỏ qua
-              </button>
+      {state === "confirming" && (
+        <div className="ask" ref={askRef}>
+          {proposal ? (
+            <ProposalCard
+              rows={proposal}
+              /* Câu của tool ("Lan +4, Hùng −1… Ghi ván này nhé?") viết ra để
+                 ĐỌC LÊN — nghe thì cần con số. Trên màn hình các dòng bên dưới
+                 đã có đủ, nhắc lại thành chữ chỉ làm rối chỗ cần liếc nhất. */
+              title={lastSentence(pendingPrompt) ?? "Ghi ván này nhé?"}
+              onAccept={onAccept}
+              onReject={onReject}
+            />
+          ) : (
+            /* Tool không có con số nào để vẽ ("kết thúc phiên nhé?") — vẫn phải
+               có hai nút, nếu không người dùng kẹt ở trạng thái chờ chốt. */
+            <div className="proposal" role="group" aria-label="Xác nhận">
+              <div className="proposal-head">{pendingPrompt}</div>
+              <div className="confirm-bar">
+                <button type="button" className="yes" onClick={onAccept}>
+                  Đồng ý
+                </button>
+                <button type="button" className="no" onClick={onReject}>
+                  Bỏ qua
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          )}
+        </div>
+      )}
 
       {/* R — chạy lại đúng câu vừa nói, không bắt nói lại. */}
       {canRetry && (

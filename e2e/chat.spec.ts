@@ -16,10 +16,13 @@ const CAU = "Nam ăn 3, ba người kia mỗi người chung 1";
 
 test.beforeEach(async ({ page }) => resetServer(page));
 
-async function startSession(page: Page): Promise<void> {
+async function startSession(page: Page, names = PLAYERS): Promise<void> {
   await installFakeSpeech(page);
   await page.goto("/");
-  for (const [i, name] of PLAYERS.entries()) {
+  for (let i = 4; i < names.length; i += 1) {
+    await page.getByRole("button", { name: "+ Thêm người chơi" }).click();
+  }
+  for (const [i, name] of names.entries()) {
     await page.getByLabel(`Tên người chơi ${i + 1}`).fill(name);
   }
   await page.getByRole("button", { name: "Bắt đầu chơi" }).click();
@@ -120,6 +123,66 @@ test("một lượt gõ chữ và một lượt nói nằm chung một mạch", 
   await expect(page.locator(".bubble.you")).toHaveCount(2);
 });
 
+test("thẻ đề xuất đọc được TỪ DÒNG ĐẦU, không bị cắt mất người ăn", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  // 5 người: thẻ đề xuất cao nhất có thể — đúng chỗ dễ bị cắt nhất.
+  await startSession(page, ["Nam", "Hùng", "Lan", "Tú", "Mai"]);
+  // Nói vài lượt trước để mạch dài hơn khung — đúng tình huống làm lộ lỗi.
+  const CAU5 = "Nam ăn bốn, bốn người kia mỗi người chung một";
+  await scriptAgent(page, {
+    "Ai đang dẫn": [{ text: "Chưa ai ghi ván nào." }],
+    "Còn mấy ván": [{ text: "Chưa có ván nào." }],
+    "Luật nhà thế nào": [{ text: "Chưa đặt luật riêng nào cả." }],
+    [CAU5]: recordThenSay(
+      record(["Nam", 4], ["Hùng", -1], ["Lan", -1], ["Tú", -1], ["Mai", -1]),
+      "Xong ván 1.",
+    ),
+  });
+  for (const q of ["Ai đang dẫn", "Còn mấy ván", "Luật nhà thế nào"]) {
+    await typeSend(page, q);
+    await expect(page.locator(".bubble.you").last()).toContainText(q);
+    await expect(page.locator(".bubble.agent:not(.thinking)").last()).toBeVisible();
+  }
+
+  await say(page, CAU5);
+  await expect(page.locator(".proposal-row")).toHaveCount(5);
+
+  // Trên production đã thấy tận mắt: khung cuộn xuống đáy thì mép trên thẻ bị
+  // cắt, và dòng người ĂN — con số lớn nhất — nằm ngoài màn hình. Người dùng
+  // bấm Ghi mà chưa từng nhìn thấy nó. MỌI dòng phải đọc được, không chỉ dòng
+  // cuối và nút bấm.
+  await expect(page.locator(".proposal-head")).toBeInViewport({ ratio: 1 });
+  const rows = page.locator(".proposal-row");
+  for (let i = 0; i < 5; i += 1) await expect(rows.nth(i)).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole("button", { name: "Ghi", exact: true })).toBeInViewport({ ratio: 1 });
+});
+
+test("màn ngắn (bàn phím ảo mở): thẻ cắt thì cắt từ DƯỚI, số vẫn đọc được", async ({
+  page,
+}) => {
+  // 360×480 ≈ điện thoại nhỏ đang mở bàn phím ảo. Ở đây thẻ 5 người CAO HƠN cả
+  // khung, nên có cắt cũng phải cắt đằng nào: cắt từ dưới thì người dùng cuộn
+  // một cái là tới nút Ghi; cắt từ trên thì con số biến mất mà chẳng báo gì.
+  await page.setViewportSize({ width: 360, height: 480 });
+  await startSession(page, ["Nam", "Hùng", "Lan", "Tú", "Mai"]);
+  const CAU5 = "Nam ăn bốn, bốn người kia mỗi người chung một";
+  await scriptAgent(page, {
+    [CAU5]: recordThenSay(
+      record(["Nam", 4], ["Hùng", -1], ["Lan", -1], ["Tú", -1], ["Mai", -1]),
+      "Xong ván 1.",
+    ),
+  });
+
+  await say(page, CAU5);
+  await expect(page.locator(".proposal-row")).toHaveCount(5);
+
+  await expect(page.locator(".proposal-head")).toBeInViewport({ ratio: 1 });
+  await expect(page.locator(".proposal-row").first()).toBeInViewport({ ratio: 1 });
+  await expect(page.locator(".proposal-row").first()).toContainText("+4");
+});
+
 test("@360px: composer không đẩy trang cuộn ngang", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 740 });
   await startSession(page);
@@ -159,5 +222,5 @@ test("khung chat cuộn trong chính nó, không đẩy bảng điểm đi mất
   });
   expect(scrolls?.over).toBe(true);
   // Lượt mới nhất phải nằm trong tầm mắt, không rơi xuống dưới mép.
-  await expect(page.locator(".bubble.agent:not(.thinking)").last()).toBeInViewport();
+  await expect(page.locator(".bubble.agent:not(.thinking)").last()).toBeInViewport({ ratio: 1 });
 });

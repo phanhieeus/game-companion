@@ -370,7 +370,7 @@ button:disabled { cursor: not-allowed; }
   /* Trần chiều cao vì khối này DÍNH ĐÁY: không chặn lại thì nói chục lượt là nó
      ăn hết màn hình và bảng điểm — thứ người ta liếc nhiều nhất — chẳng còn chỗ.
      Quá trần thì mạch tự cuộn trong khung. */
-  max-height: min(38vh, 15rem);
+  max-height: min(46vh, 19rem);
   overflow-y: auto;
   overscroll-behavior: contain;
   display: flex;
@@ -378,6 +378,12 @@ button:disabled { cursor: not-allowed; }
   gap: var(--s2);
   font-size: var(--t-sm);
 }
+
+/* Đang chờ chốt thì QUYẾT ĐỊNH được ưu tiên chỗ: nới trần ra để cả thẻ đề xuất
+   — mọi dòng số lẫn nút Ghi — nằm gọn trong màn hình. Bàn 5 người thì thẻ cao
+   hơn trần thường, và một thẻ bị cắt là thứ tệ nhất có thể cắt: người ta bấm
+   Ghi mà chưa đọc hết số. Chốt xong khung tự co lại, bảng điểm lấy chỗ về. */
+.chat:has(.ask) { max-height: min(70vh, 30rem); }
 
 .chat .hint { color: var(--text-faint); line-height: 1.55; }
 
@@ -441,7 +447,7 @@ button:disabled { cursor: not-allowed; }
 
 /* Thẻ đề xuất là một lượt trong mạch, nên trải hết bề ngang chứ không bó như
    bong bóng chữ — các con số cần chỗ để đọc nhanh. */
-.chat .proposal { align-self: stretch; }
+.ask { align-self: stretch; }
 
 .retry {
   align-self: flex-start;
