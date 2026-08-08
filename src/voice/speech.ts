@@ -39,6 +39,18 @@ export function isSpeechRecognitionSupported(): boolean {
   return getRecognitionCtor() !== undefined;
 }
 
+/**
+ * Chrome không hiện hộp xin quyền micro trên origin không an toàn — nó từ chối
+ * im lặng. Kiểm trước để cảnh báo, thay vì để người dùng bấm rồi ngồi đoán.
+ */
+export function isSecureOrigin(): boolean {
+  return typeof window !== "undefined" && window.isSecureContext;
+}
+
+export function currentOrigin(): string {
+  return typeof window !== "undefined" ? window.location.origin : "";
+}
+
 export interface Listener {
   stop(): void;
   abort(): void;
@@ -51,10 +63,25 @@ export interface ListenCallbacks {
   onError: (message: string) => void;
 }
 
+/**
+ * Chrome chỉ cho dùng micro trên "secure context": https, http://localhost,
+ * hoặc http://127.0.0.1. Mở qua IP LAN (http://192.168.x.x) thì Chrome TỪ CHỐI
+ * THẲNG, không hiện hộp xin quyền — nên người dùng tưởng app hỏng chứ không
+ * biết là do địa chỉ. Nói rõ ra thay vì báo lỗi chung chung.
+ */
+function insecureOriginHint(): string {
+  return window.isSecureContext
+    ? ""
+    : ` Trang đang mở qua ${window.location.protocol}//${window.location.hostname} — Chrome chỉ cho dùng micro trên https hoặc localhost.`;
+}
+
 const ERROR_MESSAGES: Record<string, string> = {
   "no-speech": "Mình không nghe thấy gì, nói lại giúp nhé.",
-  "audio-capture": "Không truy cập được micro. Kiểm tra quyền micro của trình duyệt.",
+  "audio-capture":
+    "Không truy cập được micro. Kiểm tra xem máy có micro và app khác có đang chiếm không.",
   "not-allowed": "Trình duyệt chưa cho phép dùng micro.",
+  // Lỗi hay gặp nhất khi mở bằng IP LAN.
+  "service-not-allowed": "Trình duyệt không cho dùng nhận dạng giọng nói ở đây.",
   network: "Mất kết nối mạng nên không nhận dạng được giọng nói.",
   aborted: "",
 };
@@ -95,7 +122,12 @@ export function startListening(callbacks: ListenCallbacks): Listener | null {
     const message = ERROR_MESSAGES[event.error];
     // aborted = người dùng tự huỷ, không phải lỗi cần báo.
     if (message !== "") {
-      callbacks.onError(message ?? "Có lỗi khi nhận dạng giọng nói.");
+      const base = message ?? `Lỗi nhận dạng giọng nói (${event.error}).`;
+      const needsOriginHint =
+        event.error === "not-allowed" ||
+        event.error === "service-not-allowed" ||
+        event.error === "audio-capture";
+      callbacks.onError(base + (needsOriginHint ? insecureOriginHint() : ""));
     }
   };
 

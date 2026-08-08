@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { MAX_PLAYERS, MIN_PLAYERS } from "../domain/types";
-import { isSpeechRecognitionSupported } from "../voice/speech";
+import {
+  currentOrigin,
+  isSecureOrigin,
+  isSpeechRecognitionSupported,
+} from "../voice/speech";
 
 interface Props {
   onCreate: (players: string[], meName: string | null) => void;
@@ -33,6 +37,19 @@ export function SetupScreen({ onCreate, error }: Props) {
         <div className="warning">
           Trình duyệt này không hỗ trợ nhận dạng giọng nói. Mở bằng Chrome trên
           Android hoặc máy tính để dùng được giọng nói.
+        </div>
+      )}
+
+      {isSpeechRecognitionSupported() && !isSecureOrigin() && (
+        <div className="warning">
+          Đang mở qua <code>{currentOrigin()}</code>. Chrome chỉ cho dùng micro
+          trên <code>https</code> hoặc <code>localhost</code>, nên sẽ không hiện
+          hộp xin quyền và nút nói sẽ không chạy.
+          <br />
+          <br />
+          Trên máy tính: mở <code>http://localhost:5173</code>.
+          <br />
+          Trên điện thoại: xem mục "Test trên điện thoại" trong README.
         </div>
       )}
 

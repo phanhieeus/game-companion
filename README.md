@@ -14,10 +14,36 @@ cp .env.example .env      # rồi điền GEMINI_API_KEY
 npm run dev
 ```
 
-Mở http://localhost:5173. Để test trên điện thoại, mở địa chỉ `Network:` mà Vite
-in ra (cùng mạng Wi-Fi).
+Mở **http://localhost:5173**.
 
 Lấy Gemini API key miễn phí: https://aistudio.google.com/apikey
+
+> ⚠️ **Phải mở bằng `localhost`, không phải IP LAN.** Chrome chỉ cho dùng micro
+> trên "secure context": `https`, `http://localhost`, hoặc `http://127.0.0.1`.
+> Mở qua `http://192.168.x.x:5173` thì Chrome **từ chối im lặng — không hiện hộp
+> xin quyền**, nên trông như app hỏng. App sẽ cảnh báo nếu bạn mở sai địa chỉ.
+
+## Test trên điện thoại
+
+Địa chỉ `Network:` mà Vite in ra (`http://192.168.x.x:5173`) mở được trang nhưng
+**micro sẽ không chạy** vì lý do trên. Ba cách xử lý, dễ nhất trước:
+
+1. **Điện thoại Android nối USB — `adb reverse`.** Điện thoại nhìn máy tính như
+   chính `localhost` của nó, nên thành secure context miễn phí:
+
+   ```bash
+   adb reverse tcp:5173 tcp:5173
+   adb reverse tcp:8787 tcp:8787
+   ```
+
+   Rồi mở `http://localhost:5173` trên điện thoại.
+
+2. **Cho phép riêng origin đó trong Chrome điện thoại.** Mở
+   `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, thêm
+   `http://192.168.x.x:5173`, bật lên rồi khởi động lại Chrome.
+
+3. **Tunnel HTTPS** (`cloudflared tunnel --url http://localhost:5173` hoặc
+   ngrok) — chạy được ở mọi máy, nhưng chậm hơn và cần cài thêm.
 
 ## Yêu cầu
 
