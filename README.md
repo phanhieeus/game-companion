@@ -24,15 +24,33 @@ Lấy Gemini API key miễn phí: https://aistudio.google.com/apikey
 - **Chrome trên Android hoặc máy tính.** Nhận dạng giọng nói dùng Web Speech API;
   Safari/iOS hỗ trợ kém — chưa kiểm chứng.
 - Cần internet: cả nhận dạng giọng nói lẫn Gemini đều chạy trên mạng.
-- Free tier Gemini: 1000 lượt/ngày, 15 lượt/phút.
+- Quota free tier khác nhau rất nhiều theo model. `gemini-2.5-flash-lite` chỉ còn
+  **20 lượt/ngày** (đo 2026-08-08) — không đủ một phiên. Dùng
+  `gemini-3.1-flash-lite`. Đừng tin con số trong bài blog, chạy `npm run check:nlu`.
 
 ## Lệnh
 
 | Lệnh | Việc |
 |---|---|
 | `npm run dev` | Chạy web + API proxy cùng lúc |
-| `npm test` | Chạy test (domain, tools, phrases) |
+| `npm test` | Unit test (domain, repository, tools, phrases) |
+| `npm run test:e2e` | E2E Playwright — giả lập giọng nói, không cần micro |
+| `npm run check:nlu` | Gửi câu tiếng Việt mẫu vào Gemini thật, kiểm intent |
 | `npm run build` | Typecheck + build production |
+
+> `npm run dev` KHÔNG tự nạp lại `server/index.js`. Sửa system prompt xong phải
+> khởi động lại, nếu không sẽ tưởng sửa không ăn thua.
+
+## Test khi không bật được micro
+
+Web Speech API trong Chromium (bản Playwright tải về) không chạy nhận dạng thật,
+nên STT là phần duy nhất phải thử tay trên Chrome thật. Mọi thứ **từ chữ trở đi**
+đều test được:
+
+- `npm run test:e2e` cài một `SpeechRecognition` giả trước khi trang load, rồi
+  bơm thẳng câu nói vào. Không phải sửa dòng code production nào.
+- `npm run check:nlu` gửi câu tiếng Việt mẫu vào Gemini thật để xem có hiểu đúng
+  không (tốn 10 lượt quota).
 
 ## Kiến trúc
 

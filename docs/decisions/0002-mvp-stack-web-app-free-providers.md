@@ -34,16 +34,39 @@ cho cả hai chiều.
   tốt trên Chrome/Edge, độ chính xác không có cam kết.
 - Chấp nhận được vì đây chính là thứ MVP cần đo.
 
-### LLM: Gemini 2.5 Flash-Lite
+### LLM: Gemini 3.1 Flash-Lite
 
-Intent parsing + trích tham số dùng Gemini 2.5 Flash-Lite qua free tier.
+Intent parsing + trích tham số dùng `gemini-3.1-flash-lite` qua free tier.
 
-- 1000 requests/ngày, 15 RPM — đủ cho ~10 phiên/ngày khi test.
-- Tiếng Việt tốt nhất trong các free tier khả dụng; có function calling khớp với
-  tool layer ở [`tools.md`](../product/tools.md).
-- Không chọn Gemini 2.5 Flash (chỉ 250 req/ngày — hết quota khi debug).
-- Không chọn Groq (nhanh hơn nhiều nhưng tiếng Việt yếu hơn rõ rệt; nhận sai tên
-  hoặc số là hỏng đúng thứ MVP cần chứng minh).
+- Có function calling khớp với tool layer ở [`tools.md`](../product/tools.md).
+- Đo thực tế 2026-08-08: **10/10** câu tiếng Việt mẫu ra đúng intent
+  (`npm run check:nlu`), gồm cả cụm gộp "ba người kia", "tôi" → người cầm máy,
+  và từ chối đoán khi gặp tên lạ.
+- Không chọn Groq (nhanh hơn nhưng tiếng Việt yếu hơn rõ rệt; nhận sai tên hoặc
+  số là hỏng đúng thứ MVP cần chứng minh).
+
+#### Sửa sai: quota free tier phải hỏi API, không tin bài viết
+
+Bản đầu của decision này chọn `gemini-2.5-flash-lite` với lý do "1000
+requests/ngày" — con số lấy từ kết quả tìm kiếm web. **Sai.** Khi gọi thật, API
+trả về:
+
+```
+quotaId:    GenerateRequestsPerDayPerProjectPerModel-FreeTier
+quotaValue: 20
+```
+
+20 lượt/ngày, không phải 1000. Một phiên chơi cần 50–100 lượt, nên model đó
+không dùng được — không phải "hơi chật" mà là không đủ chơi hết một ván bài.
+
+Bài học cho lần sau: **quota là con số chỉ API mới biết.** Nó thay đổi theo
+model, theo thời điểm, theo tài khoản, và Google đổi không báo trước. Mọi bài
+blog đều có thể đã cũ. Cách kiểm: gọi thử rồi đọc `quotaValue` trong lỗi 429,
+hoặc chạy `npm run check:nlu`.
+
+Ghi chú kèm theo: 429 có hai nguyên nhân rất khác nhau — hết lượt/phút (chờ một
+lát) và hết lượt/ngày (chờ sang ngày). Server phân biệt bằng `quotaId` để không
+báo nhầm khiến người dùng bỏ cuộc oan.
 
 ### Backend tối thiểu
 
@@ -79,12 +102,15 @@ Tradeoffs:
 
 - Phụ thuộc Chrome; Safari/iOS hỗ trợ Web Speech API kém hơn — cần kiểm chứng sớm
   nếu người chơi dùng iPhone.
-- Quota 1000 req/ngày là trần cứng; vượt thì phải chờ sang ngày.
+- Quota free tier là trần cứng và Google đổi không báo trước. Nếu một ngày app
+  báo hết lượt bất thường, chạy `npm run check:nlu` để xem quota thật.
 - Có thêm một tiến trình server phải chạy, dù rất nhỏ.
 
 ## Follow-Up
 
 - Đo độ chính xác nhận dạng tiếng Việt thực tế trong 1–2 phiên chơi thật. Nếu
   không đạt, xem lại lựa chọn STT (đây là giả định rủi ro nhất của MVP).
+- Đo quota thật của `gemini-3.1-flash-lite` khi chơi một phiên đầy đủ — mới xác
+  nhận là đủ cho 10 lượt liên tiếp, chưa biết trần ngày.
 - Kiểm tra trên iPhone/Safari sớm.
 - Khi cần `rank`, mở lại [`scoring.md`](../product/scoring.md).

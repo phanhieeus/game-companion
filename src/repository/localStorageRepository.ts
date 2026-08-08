@@ -38,11 +38,13 @@ export class LocalStorageSessionRepository implements SessionRepository {
   }
 
   get(sessionId: string): Session | undefined {
-    return this.load().get(sessionId);
+    const stored = this.load().get(sessionId);
+    return stored ? structuredClone(stored) : undefined;
   }
 
   save(session: Session): void {
-    this.load().set(session.id, session);
+    // Lưu bản sao — xem ghi chú trong MemorySessionRepository.save.
+    this.load().set(session.id, structuredClone(session));
     this.flush();
   }
 

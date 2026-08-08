@@ -6,11 +6,17 @@ export class MemorySessionRepository implements SessionRepository {
   private sessions = new Map<string, Session>();
 
   get(sessionId: string): Session | undefined {
-    return this.sessions.get(sessionId);
+    const stored = this.sessions.get(sessionId);
+    return stored ? structuredClone(stored) : undefined;
   }
 
   save(session: Session): void {
-    this.sessions.set(session.id, session);
+    // Lưu bản sao, không giữ tham chiếu của caller.
+    //
+    // Tool layer sửa session tại chỗ (session.rounds.push(...)). Nếu repo giữ
+    // đúng object đó thì get() trả về cùng một tham chiếu, React thấy state
+    // không đổi và KHÔNG render lại — ghi điểm xong bảng điểm đứng im.
+    this.sessions.set(session.id, structuredClone(session));
   }
 
   list(): Session[] {

@@ -66,13 +66,32 @@ Xây từ trong ra ngoài, để phần đúng-đắn được test trước ph�
 - [x] proxy server + Gemini NLU
 - [x] voice: STT/TTS wrapper
 - [x] UI: scoreboard + voice + confirm
-- [ ] **Chạy thật một phiên, đo độ chính xác** ← còn lại, cần người thật + micro
+- [x] E2E Playwright với SpeechRecognition giả (11 test)
+- [x] Kiểm tiếng Việt trên Gemini thật (`check:nlu`, 10/10)
+- [ ] **Chạy thật một phiên với micro, đo độ chính xác STT** ← còn lại
 
-Đã verify bằng máy: `npm test` 41 pass, `npm run build` sạch, vite dev serve
-200 và mọi module compile, `/api/health` trả đúng và báo lỗi rõ khi thiếu key.
+Đã verify bằng máy:
 
-Chưa verify: toàn bộ luồng giọng nói end-to-end. Cần Chrome + micro + Gemini key
-thật, không tự động hoá được.
+- `npm test` — 44 pass (domain, repository, tools, phrases)
+- `npm run test:e2e` — 11 pass, đi hết luồng từ chữ → intent → xác nhận → ghi
+  điểm → bảng điểm, gồm cả từ chối xác nhận, chặn tổng ≠ 0, undo, và mở lại app
+- `npm run check:nlu` — 10/10 câu tiếng Việt ra đúng intent trên
+  `gemini-3.1-flash-lite`
+- `npm run build` sạch
+
+Chưa verify: **chỉ còn đúng phần STT** (giọng → chữ). Web Speech API trong
+Chromium không chạy nhận dạng thật nên phải thử tay trên Chrome thật.
+
+Bug đã tìm ra và sửa trong lúc test:
+
+- Repository trả về tham chiếu dùng chung; tool layer sửa tại chỗ nên React
+  không thấy state đổi → **ghi điểm xong bảng điểm đứng im**. Sửa thành value
+  store (clone vào/ra), có test chặn tái phát.
+- `readConfirmation` quét cả câu nên "Hùng trừ một thôi" bị hiểu là từ chối
+  ("thôi" = trợ từ "chỉ"), nuốt mất câu sửa. Sửa thành chỉ xét từ đầu câu.
+- 429 bị báo nhầm luôn là "hết quota hôm nay" kể cả khi chỉ vượt 15 lượt/phút.
+- `gemini-2.5-flash-lite` thực tế chỉ 20 lượt/ngày, không phải 1000 như bài viết
+  trên web — xem decision 0002.
 
 ## Decisions
 

@@ -13,7 +13,7 @@ import "dotenv/config";
 
 const PORT = process.env.PORT || 8787;
 const API_KEY = process.env.GEMINI_API_KEY;
-const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+const MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -173,13 +173,28 @@ ${
   zeroSum
     ? `
 QUAN TRỌNG — tổng điểm mỗi ván phải bằng 0:
-Điểm chỉ chuyển giữa những người chơi, không sinh ra thêm. Trước khi gọi record_round, hãy cộng tất cả delta lại và kiểm tra bằng 0.
-- Nếu người nói chỉ cho biết người thắng và số điểm (ví dụ "Nam ăn 6"), ĐỪNG tự bịa cách chia. Gọi clarify và đề xuất chia đều: "6 điểm này ai chung? Chia đều 3 người còn lại nhé?"
-- Nếu người nói đã nói rõ cách chia và tổng vẫn khác 0, gọi clarify và đọc lại con số bạn nghe được.
-- Chỉ gọi record_round khi tổng đúng bằng 0.`
+Điểm chỉ chuyển giữa những người chơi, không sinh ra thêm. Trước khi gọi record_round, cộng tất cả delta lại và kiểm tra bằng 0.
+
+Phân biệt hai trường hợp sau, đây là chỗ dễ lẫn nhất:
+
+(a) Người nói ĐÃ cho biết cách chia → tính ra rồi gọi record_round luôn.
+    "Nam ăn 3, ba người kia mỗi người chung 1"
+    → "ba người kia" = 3 người không được nhắc tên = Hùng, Lan, Tú.
+    → Nam +3, Hùng -1, Lan -1, Tú -1. Tổng = 0. GỌI record_round.
+    → TUYỆT ĐỐI KHÔNG hỏi "đúng không?" ở đây. Bạn đã có đủ thông tin.
+
+(b) Người nói CHƯA cho biết cách chia → clarify.
+    "Nam ăn 6"  (không nói ai chung, không nói chia thế nào)
+    → clarify: "6 điểm này ai chung? Chia đều 3 người còn lại nhé?"
+
+Nếu cách chia đã rõ nhưng cộng lại vẫn khác 0, gọi clarify và đọc lại con số bạn nghe được.
+Chỉ gọi record_round khi tổng đúng bằng 0.`
     : ""
 }
-Nguyên tắc: nghe nhầm điểm làm mất vui cả ván. Khi còn nghi ngờ, luôn chọn clarify thay vì đoán.
+Khi nào dùng clarify — đọc kỹ, đây là chỗ hay sai nhất:
+- App ĐÃ CÓ SẴN một bước xác nhận riêng: sau khi bạn trả về record_round, app tự đọc lại "Nam +3, Hùng -1..." và chờ người dùng nói "ừ". Bạn KHÔNG cần hỏi để xác nhận lại điều mình đã hiểu đúng — làm vậy bắt người ta nói hai lần cho cùng một ván.
+- Chỉ clarify khi THIẾU THÔNG TIN thật sự: không biết ai chung, không biết chia thế nào, tên không khớp ai, hoặc tổng không thể làm bằng 0.
+- Nếu suy ra được đầy đủ từng người và tổng đã bằng 0 thì gọi record_round luôn, kể cả khi phải suy từ cụm gộp như "ba người kia". Đừng hỏi "đúng không?" — đó là việc của bước xác nhận.
 
 Luôn gọi đúng một function. Mọi câu chữ bạn viết ra phải bằng tiếng Việt, ngắn gọn, tự nhiên như đang nói.`;
 }
@@ -234,11 +249,19 @@ app.post("/api/interpret", async (req, res) => {
     if (!response.ok) {
       const detail = await response.text();
       console.error(`Gemini ${response.status}:`, detail);
-      // Quota là lỗi hay gặp nhất ở free tier — nói rõ để khỏi phải đoán.
-      const message =
-        response.status === 429
-          ? "Hết quota Gemini hôm nay (free tier 1000 lượt/ngày). Thử lại sau hoặc nhập điểm bằng tay."
-          : `Gemini trả lỗi ${response.status}.`;
+
+      let message = `Gemini trả lỗi ${response.status}.`;
+      if (response.status === 429) {
+        // 429 có HAI nguyên nhân rất khác nhau ở free tier:
+        //   - 15 lượt/PHÚT  → chờ khoảng một phút là chạy tiếp được
+        //   - 1000 lượt/NGÀY → hết thật, phải chờ sang ngày
+        // Nói nhầm cái thứ hai khi thực ra là cái thứ nhất sẽ làm người dùng
+        // bỏ cuộc oan, nên phân biệt theo quota id Google trả về.
+        const perDay = /PerDay|per_day/i.test(detail);
+        message = perDay
+          ? "Hết quota Gemini hôm nay (1000 lượt/ngày). Mai dùng tiếp, hoặc nhập điểm bằng tay."
+          : "Nói hơi nhanh, Gemini đang giới hạn 15 lượt/phút. Chờ một chút rồi nói lại.";
+      }
       return res.status(502).json({ error: message });
     }
 
