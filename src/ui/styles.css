@@ -160,7 +160,12 @@ button:disabled { cursor: not-allowed; }
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  overflow: hidden;
+  /* `clip` chứ KHÔNG phải `hidden` (C-025).
+     Cả hai đều cắt gọn góc bo, nhưng `hidden` tạo ra một vùng cuộn mới, và
+     `position: sticky` bên trong sẽ dính vào vùng đó thay vì dính vào màn hình
+     — tức là không dính gì cả. `clip` không tạo vùng cuộn nên hàng tên dính
+     được. */
+  overflow: clip;
   box-shadow: var(--shadow-1);
 }
 
@@ -188,6 +193,15 @@ button:disabled { cursor: not-allowed; }
 .rounds-table.cols-5 th,
 .rounds-table.cols-5 td { font-size: var(--t-xs); padding-inline: 2px; }
 
+/* Ô góc dính cả hai chiều — phải nằm trên cả hàng tên lẫn cột ván. */
+.rounds-table thead .c-seq {
+  background: var(--surface-2);
+  z-index: 3;
+}
+
+/* Hàng Σ ở chân bảng: nền đặc để hàng dữ liệu không lộ ra phía sau khi cuộn. */
+.rounds-table tfoot .c-seq { background: var(--surface-2); }
+
 .rounds-table thead th {
   color: var(--text-dim);
   font-size: var(--t-xs);
@@ -195,6 +209,11 @@ button:disabled { cursor: not-allowed; }
   letter-spacing: 0.02em;
   padding-block: var(--s2);
   background: var(--surface-2);
+  /* Chơi 20–30 ván thì bảng dài hơn màn hình. Cuộn xuống mà mất hàng tên là
+     nhìn một dãy số không biết của ai — đúng lúc cần đọc nhanh nhất (C-025). */
+  position: sticky;
+  top: 0;
+  z-index: 2;
   border-bottom: 1px solid var(--border);
 }
 
@@ -202,6 +221,13 @@ button:disabled { cursor: not-allowed; }
   width: 2.4rem;
   text-align: left;
   padding-left: var(--s3);
+  /* Cột số ván dính trái: hiện 5 người vẫn vừa 360px (ADR 6) nên chưa cần,
+     nhưng cùng một cơ chế nên làm luôn — bảng rộng hơn thì vẫn biết đang xem
+     ván nào. Nền đặc để số bên dưới không lộ ra khi trượt qua. */
+  position: sticky;
+  left: 0;
+  background: var(--surface-1);
+  z-index: 1;
   color: var(--text-faint);
   font-weight: 500;
 }

@@ -185,3 +185,52 @@ test("C-003 / PRD metric #3: sau 10 ván 5 người, nút Voice vẫn trong màn
   // 5 cột người chơi vẫn đủ.
   await expect(page.locator(".rounds-table thead th")).toHaveCount(7);
 });
+
+/**
+ * C-025 — cuộn xuống mà mất hàng tên là nhìn một dãy số không biết của ai.
+ */
+test("C-025: hàng tên người chơi vẫn thấy khi cuộn xuống cuối bảng", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 640 });
+  await startSession(page, ["Nam", "Hùng", "Lan", "Tú"]);
+  // 16 ván: đủ dài để trang cuộn ở 640px (test "về đầu trang" đã chứng minh),
+  // và nằm dưới hạn 20 lượt/phút của C-021 — 25 ván trong một phút không phải
+  // nhịp người thật, guardrail chặn là đúng.
+  for (let i = 0; i < 16; i += 1) {
+    await addRound(page, { Nam: 1, Hùng: -1, Lan: 1, Tú: -1 });
+  }
+
+  const nameCell = page.locator(".rounds-table thead th").nth(1);
+  const box0 = await nameCell.boundingBox();
+  expect(box0).not.toBeNull();
+
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(200);
+
+  // Sau khi cuộn xuống đáy, hàng tên phải VẪN nằm trong khung nhìn.
+  const box = await nameCell.boundingBox();
+  expect(box).not.toBeNull();
+  const height = page.viewportSize()!.height;
+  expect(box!.y).toBeGreaterThanOrEqual(-1);
+  expect(box!.y).toBeLessThan(height);
+  await expect(nameCell).toHaveText("Nam ·");
+
+  // Và cột tên phải khớp đúng cột số bên dưới — dính mà lệch cột thì vô nghĩa.
+  const firstBodyCell = page.locator(".rounds-table tbody tr td").first();
+  const cellBox = await firstBodyCell.boundingBox();
+  expect(Math.abs(cellBox!.x - box!.x)).toBeLessThan(2);
+});
+
+test("C-025: bảng 5 người @360px vẫn KHÔNG cuộn ngang sau khi làm cột dính", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 640 });
+  await startSession(page, ["Nam", "Hùng", "Lan", "Tú", "Minh"]);
+  await addRound(page, { Nam: 2, Hùng: -1, Lan: -1, Tú: 1, Minh: -1 });
+
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+});
