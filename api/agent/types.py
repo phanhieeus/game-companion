@@ -97,6 +97,12 @@ class ToolContext:
     #: Thứ tự bảng là tuỳ chọn HIỂN THỊ của client (ADR 5), server không giữ.
     #: Tool chỉ ghi lại ý định; client đọc `uiIntents` rồi tự áp.
     set_round_order: Callable[[str], None] = lambda order: None
+    #: Ghi vết (C-022). Tuỳ chọn: không có thì agent chạy y hệt như cũ, nên test
+    #: vòng lặp không phải dựng thêm gì và tracing không đổi được hành vi.
+    tracer: Any = None
+    #: Prompt hệ thống của lượt gọi model gần nhất, để tracer chép lại. Do
+    #: `routes/agent.py` đặt vào — vòng lặp không biết prompt trông thế nào.
+    last_prompt: str | None = None
 
 
 @dataclass

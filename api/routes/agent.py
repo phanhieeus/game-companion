@@ -8,6 +8,8 @@ chạy tool**. Lời gọi đang chờ xác nhận nằm ở đây cho tới khi
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from uuid import uuid4
 
 from fastapi import APIRouter, Body, Header, Request
 
@@ -17,7 +19,9 @@ from ..agent.memory import FactStore, create_memory
 from ..agent.tools import tool_declarations
 from ..agent.types import AgentMessage, ToolCall, ToolContext
 from ..domain.scoring import compute_scoreboard
-from ..guardrails import RateLimiter, check_utterance
+from ..guardrails import GuardrailHit, RateLimiter, check_utterance
+from ..tracing import Tracer
+from ..agent.gemini import system_prompt
 from ..repository.base import SessionRepository
 from ..tools import Tools
 from .sessions import ERRORS, error_response
@@ -36,16 +40,37 @@ class AgentSession:
     #: Thứ tự bảng là tuỳ chọn của người cầm máy chứ không phải dữ liệu ván bài
     #: (ADR 5) — server không có quyền và cũng không nên giữ nó.
     ui_intents: dict = field(default_factory=dict)
+    #: Thiết bị của lượt gần nhất — lượt chốt không mang header nên mượn lại.
+    device_id: str | None = None
 
 
 def build_agent_router(
-    tools: Tools, repo: SessionRepository, fact_store: FactStore
+    tools: Tools,
+    repo: SessionRepository,
+    fact_store: FactStore,
+    trace_store=None,
 ) -> APIRouter:
     router = APIRouter()
     sessions: dict[str, AgentSession] = {}
     # Mỗi lượt tiêu MỘT lượt gọi Gemini bằng key của operator, trên một URL công
     # khai. Không có lớp này thì ai biết địa chỉ cũng đốt sạch quota (C-021).
     limiter = RateLimiter()
+
+    def new_tracer(session_id: str, device_id: str | None, text: str) -> Tracer:
+        return Tracer(
+            trace_store,
+            turn_id=f"turn_{uuid4().hex[:12]}",
+            session_id=session_id,
+            device_id=device_id,
+            at=datetime.now(timezone.utc).isoformat(),
+            text=text,
+        )
+
+    def _blocked(tracer: Tracer, hit: GuardrailHit, outcome: str) -> None:
+        """Chặn cũng là một lượt — phải nằm trong vết, nếu không thì người dùng
+        kêu 'app không nhận' mà admin nhìn log thấy trống trơn."""
+        tracer.guardrail(hit)
+        tracer.finish({"type": "blocked", "message": hit.message})
 
     def rate_key(request: Request, device_id: str | None) -> str:
         """Khoá theo thiết bị, lùi về IP khi không có header.
@@ -62,44 +87,48 @@ def build_agent_router(
             sessions[session_id] = AgentSession(memory=create_memory(fact_store))
         return sessions[session_id]
 
-    def context_for(session_id: str, state: AgentSession) -> ToolContext | None:
+    def context_for(
+        session_id: str, state: AgentSession, tracer: Tracer | None = None
+    ) -> ToolContext | None:
         session = repo.get(session_id)
         if session is None:
             return None
 
         async def model(messages: list[AgentMessage]):
-            return await call_gemini(
-                messages,
-                tool_declarations(),
-                {
-                    "players": [
-                        {"name": p.name}
-                        for p in session.players
-                        if p.status == "active"
-                    ],
-                    "mePlayer": next(
-                        (p.name for p in session.players if p.id == session.mePlayerId),
-                        None,
-                    ),
-                    "zeroSum": session.scoringConfig.zeroSum,
-                    "roundsPlayed": len(
-                        [r for r in session.rounds if r.status == "recorded"]
-                    ),
-                    "confirmBeforeCommit": session.confirmBeforeCommit,
-                    "memory": [f.text for f in state.memory.facts()],
-                },
-            )
+            prompt_context = {
+                "players": [
+                    {"name": p.name} for p in session.players if p.status == "active"
+                ],
+                "mePlayer": next(
+                    (p.name for p in session.players if p.id == session.mePlayerId),
+                    None,
+                ),
+                "zeroSum": session.scoringConfig.zeroSum,
+                "roundsPlayed": len(
+                    [r for r in session.rounds if r.status == "recorded"]
+                ),
+                "confirmBeforeCommit": session.confirmBeforeCommit,
+                "memory": [f.text for f in state.memory.facts()],
+            }
+            # Prompt đổi theo roster và trí nhớ nên không suy ngược được — chép
+            # đúng bản đã gửi vào vết (C-022).
+            ctx.last_prompt = system_prompt(prompt_context)
+            if ctx.tracer:
+                ctx.tracer.set_prompt(ctx.last_prompt)
+            return await call_gemini(messages, tool_declarations(), prompt_context)
 
         def set_round_order(order: str) -> None:
             state.ui_intents["roundOrder"] = order
 
-        return ToolContext(
+        ctx = ToolContext(
             session=session,
             tools=tools,
             memory=state.memory,
             model=model,
             set_round_order=set_round_order,
+            tracer=tracer,
         )
+        return ctx
 
     def to_wire(outcome: dict) -> dict:
         """Bỏ `call` trước khi gửi đi.
@@ -143,7 +172,7 @@ def build_agent_router(
         x_device_id: str | None = Header(default=None),
     ):
         state = state_of(session_id)
-        ctx = context_for(session_id, state)
+        ctx = context_for(session_id, state, None)
         if ctx is None:
             return error_response("SESSION_NOT_FOUND", "Không có phiên này.", 404)
 
@@ -151,20 +180,27 @@ def build_agent_router(
         if not text:
             return error_response("EMPTY_UTTERANCE", "Chưa nghe được gì.", 400)
 
+        tracer = new_tracer(session_id, x_device_id, text)
+
         # Chặn TRƯỚC khi gọi model: câu 10k ký tự không được tốn lượt Gemini nào.
         too_long = check_utterance(text)
         if too_long:
+            _blocked(tracer, too_long, "utterance_too_long")
             return error_response("UTTERANCE_TOO_LONG", too_long.message, 400)
 
         limited = limiter.check(rate_key(request, x_device_id))
         if limited:
+            _blocked(tracer, limited, "rate_limited")
             return error_response("RATE_LIMITED", limited.message, 429)
 
         # Câu mới trong lúc còn lời gọi treo = người dùng đổi ý. Bỏ lời gọi cũ,
         # đừng để nó nằm đó rồi chốt nhầm ở lần bấm sau.
         state.pending = None
+        state.device_id = x_device_id
 
+        ctx.tracer = tracer
         result = await run_agent(text, ctx)
+        tracer.finish(result.outcome)
         if result.outcome.get("type") == "confirm":
             state.pending = result.outcome["call"]
 
@@ -202,7 +238,14 @@ def build_agent_router(
             )
 
         state.pending = None
+        tracer = new_tracer(
+            session_id,
+            state.device_id,
+            f"[chốt: {'đồng ý' if body.get('accepted') else 'bỏ qua'}] {call.name}",
+        )
+        ctx.tracer = tracer
         result = await resume_agent(call, bool(body.get("accepted")), ctx)
+        tracer.finish(result.outcome)
         if result.outcome.get("type") == "confirm":
             state.pending = result.outcome["call"]
 

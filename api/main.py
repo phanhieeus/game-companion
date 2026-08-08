@@ -39,19 +39,25 @@ if DATABASE_URL:
     from .agent.pgmemory import PgFactStore
     from .repository.postgres import PgSessionRepository
 
+    from .repository.traces import PgTraceStore
+
     repo = PgSessionRepository(DATABASE_URL)
     fact_store = PgFactStore(DATABASE_URL)
+    trace_store = PgTraceStore(DATABASE_URL)
     print("[api] kho: Postgres", file=sys.stderr, flush=True)
 else:
+    from .repository.traces import FileTraceStore
+
     repo = FileSessionRepository(DATA_DIR / "sessions.json")
     fact_store = FileFactStore(DATA_DIR / "memory.json")
+    trace_store = FileTraceStore(DATA_DIR / "traces.json")
     print(f"[api] kho: file trong {DATA_DIR}", file=sys.stderr, flush=True)
 
 tools = create_tools(repo)
 
 app = FastAPI(title="Ghi điểm", version="1.0.0")
 
-agent_router = build_agent_router(tools, repo, fact_store)
+agent_router = build_agent_router(tools, repo, fact_store, trace_store)
 app.include_router(build_session_router(tools, repo), prefix="/api/sessions")
 app.include_router(agent_router, prefix="/api/sessions")
 

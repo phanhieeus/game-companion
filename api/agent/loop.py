@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from .tools import tool_by_name
 from .types import AgentMessage, ModelReply, ProposalRow, StepResult, ToolCall, ToolContext
 
@@ -14,11 +16,23 @@ MAX_STEPS = 5
 
 
 async def _call_model(ctx: ToolContext, messages: list[AgentMessage]) -> ModelReply:
+    started = time.monotonic()
     try:
-        return await ctx.model(messages)
+        reply = await ctx.model(messages)
     except Exception:
         # Hàm model tự dịch lỗi của nó rồi; tới đây là hỏng ngoài dự tính.
-        return ModelReply(error="Trợ lý đang trục trặc, thử lại giúp nhé.", retryable=True)
+        reply = ModelReply(
+            error="Trợ lý đang trục trặc, thử lại giúp nhé.", retryable=True
+        )
+
+    if ctx.tracer:
+        ctx.tracer.model_replied(
+            text=reply.text or reply.error,
+            tool=reply.call.name if reply.call else None,
+            args=reply.call.args if reply.call else None,
+            ms=int((time.monotonic() - started) * 1000),
+        )
+    return reply
 
 
 def _run_tool(call: ToolCall, ctx: ToolContext):
@@ -29,13 +43,26 @@ def _run_tool(call: ToolCall, ctx: ToolContext):
     rồi mới quyết ghi bao nhiêu, hoặc sửa xong rồi đọc lại xác nhận.
     """
     tool = tool_by_name().get(call.name)
+    started = time.monotonic()
+
     if tool is None:
         from .types import ToolResult
 
-        return ToolResult(
+        result = ToolResult(
             ok=False, data={"error": f"Không có công cụ {call.name}."}, changed=False
         )
-    return tool.run(call.args, ctx)
+        if ctx.tracer:
+            ctx.tracer.note("unknown_tool", {"name": call.name})
+    else:
+        result = tool.run(call.args, ctx)
+
+    if ctx.tracer:
+        ctx.tracer.tool_ran(
+            name=call.name,
+            result=result.data,
+            ms=int((time.monotonic() - started) * 1000),
+        )
+    return result
 
 
 def needs_confirm(call: ToolCall, ctx: ToolContext) -> dict | None:
@@ -103,6 +130,8 @@ async def _loop(ctx: ToolContext, changed_so_far: bool) -> StepResult:
     changed = changed_so_far
 
     for step in range(MAX_STEPS):
+        if ctx.tracer:
+            ctx.tracer.begin_step()
         reply = await _call_model(ctx, ctx.memory.turns())
 
         if reply.error:
@@ -121,6 +150,11 @@ async def _loop(ctx: ToolContext, changed_so_far: bool) -> StepResult:
 
             confirm = needs_confirm(reply.call, ctx)
             if confirm:
+                if ctx.tracer:
+                    ctx.tracer.note(
+                        "hitl_confirm_required",
+                        {"tool": reply.call.name, "prompt": confirm["prompt"]},
+                    )
                 # Nhường quyền cho người. Vòng lặp dừng ở đây, không tự ý ghi.
                 return StepResult(
                     outcome={
@@ -161,6 +195,8 @@ async def _loop(ctx: ToolContext, changed_so_far: bool) -> StepResult:
         )
 
     # Chạm trần: dừng và nói thật, đừng im lặng giả vờ xong.
+    if ctx.tracer:
+        ctx.tracer.note("max_steps_reached", {"limit": MAX_STEPS})
     return StepResult(
         outcome={
             "type": "error",
