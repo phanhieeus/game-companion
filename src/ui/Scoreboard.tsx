@@ -6,14 +6,17 @@ interface Props {
 }
 
 export function Scoreboard({ scoreboard, mePlayerId }: Props) {
+  // Chưa đá ván nào thì ai cũng hạng 1 — hiện ra chỉ làm rối, giấu đi.
+  const showRank = scoreboard.roundsPlayed > 0;
+
   return (
-    <div className="scoreboard">
+    <div className={`scoreboard${showRank ? "" : " no-rank"}`}>
       {scoreboard.rows.map((row) => (
         <div
-          className={`row${row.rank === 1 && scoreboard.roundsPlayed > 0 ? " leader" : ""}`}
+          className={`row${row.rank === 1 && showRank ? " leader" : ""}`}
           key={row.playerId}
         >
-          <span className="rank">{row.rank}</span>
+          {showRank && <span className="rank">{row.rank}</span>}
           <span className="name">
             {row.name}
             {row.playerId === mePlayerId && <span className="me"> · tôi</span>}

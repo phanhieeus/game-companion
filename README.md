@@ -106,3 +106,21 @@ MVP đang xây — xem
 
 Chưa kiểm chứng trên thực tế: **độ chính xác nhận dạng tiếng Việt khi nói số và
 tên người**. Đây là giả định rủi ro nhất của MVP và cần chơi thật một phiên để đo.
+
+## Skills đã cài trong repo
+
+`.claude/skills/` — từ [ai20k-build-phase](https://github.com/phanhieeus/ai20k-build-phase):
+
+| Skill | Dùng khi |
+|---|---|
+| `tcr-apply` | Đã có UI chạy được, muốn UX tốt hơn (T·C·R). **Đã áp dụng cho app này.** |
+| `ui-pattern` | Chưa có code, cần chọn UI pattern + viết PRD |
+| `flow` | Chạy method buildflow 11 chặng từ ý tưởng đến deploy |
+| `a20`, `standup`, `vibedocs` | Xem SKILL.md tương ứng |
+
+Scaffolding của `flow` (`_templates/`, `flow/`, `cards/`, `MODE`, `playbooks/`)
+đã cài kèm để `flow.sh` chạy được.
+
+> **Không** copy `CLAUDE.md` của buildflow vào đây: nó định nghĩa build discipline
+> riêng, xung đột với `AGENTS.md` của harness đang quản repo này. Hai bộ luật song
+> song thì tệ hơn một bộ.

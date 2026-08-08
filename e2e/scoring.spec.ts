@@ -84,8 +84,11 @@ test("D1: nói ghi điểm, xác nhận, bảng điểm cập nhật", async ({ 
 
   await say(page, "Nam ăn 3, ba người kia mỗi người chung 1");
 
-  // Phải hỏi xác nhận TRƯỚC khi ghi.
-  await expect(page.getByText("Nam +3, Hùng -1, Lan -1, Tú -1. Ghi ván này nhé?")).toBeVisible();
+  // Phải hỏi xác nhận TRƯỚC khi ghi, và cho NHÌN THẤY từng con số.
+  const card = page.locator(".proposal");
+  await expect(card).toContainText("Ghi ván này nhé?");
+  await expect(card.locator(".proposal-row")).toHaveCount(4);
+  await expect(card.locator(".proposal-row").filter({ hasText: "Nam" })).toContainText("+3");
   expect(await readScoreboard(page)).toEqual({ Nam: 0, Hùng: 0, Lan: 0, Tú: 0 });
 
   await page.getByRole("button", { name: "Ghi", exact: true }).click();

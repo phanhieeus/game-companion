@@ -39,12 +39,29 @@ type PendingAction =
   | { kind: "record"; entries: DraftEntry[]; requestId: string }
   | { kind: "undo"; roundId?: string };
 
+/** Ván đang chờ xác nhận, dạng hiện được lên màn hình. */
+export interface ProposalRow {
+  playerId: string;
+  name: string;
+  delta: number;
+}
+
 export interface ConversationView {
   state: VoiceState;
   transcript: string;
   agentSays: string;
   pendingPrompt: string | null;
   error: string | null;
+  /**
+   * T — cho NHÌN THẤY con số agent định ghi, không chỉ nghe đọc.
+   * Nghe "Hùng trừ một" dễ trôi; thấy "Hùng −1" thì sai là biết ngay.
+   */
+  proposal: ProposalRow[] | null;
+  /** R — câu vừa nói, giữ lại để bấm "Thử lại" không phải nói lại. */
+  lastTranscript: string;
+  /** T — biết chậm ở đâu, và lỗi có đáng thử lại không. */
+  lastMs: number | null;
+  canRetry: boolean;
 }
 
 export function useConversation(
@@ -56,6 +73,10 @@ export function useConversation(
   const [transcript, setTranscript] = useState("");
   const [agentSays, setAgentSays] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [proposal, setProposal] = useState<ProposalRow[] | null>(null);
+  const [lastTranscript, setLastTranscript] = useState("");
+  const [lastMs, setLastMs] = useState<number | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
 
   const listenerRef = useRef<Listener | null>(null);
   const pendingRef = useRef<PendingAction | null>(null);
@@ -63,16 +84,22 @@ export function useConversation(
 
   const respond = useCallback((text: string) => {
     setAgentSays(text);
+    setProposal(null);
+    setError(null);
+    setCanRetry(false);
     speak(text);
     setState("idle");
   }, []);
 
-  const fail = useCallback((message: string) => {
+  const fail = useCallback((message: string, retryable = true) => {
     // Một lượt hỏng phải để lại state y như trước khi nói.
     pendingRef.current = null;
     questionRef.current = null;
+    setProposal(null);
     setError(message);
     setAgentSays(message);
+    // R — giữ nguyên câu vừa nói để "Thử lại" không bắt nói lại từ đầu.
+    setCanRetry(retryable);
     speak(message);
     setState("idle");
   }, []);
@@ -96,7 +123,7 @@ export function useConversation(
           client_request_id: action.requestId,
           source: "voice",
         });
-        if (!result.ok) return fail(result.error.message);
+        if (!result.ok) return fail(result.error.message, false);
 
         onSessionChanged();
         const round = tools
@@ -111,7 +138,7 @@ export function useConversation(
         session_id: session.id,
         ...(action.roundId ? { round_id: action.roundId } : {}),
       });
-      if (!result.ok) return fail(result.error.message);
+      if (!result.ok) return fail(result.error.message, false);
 
       onSessionChanged();
       const voided = tools
@@ -126,9 +153,11 @@ export function useConversation(
 
   /** Xin xác nhận, hoặc chạy thẳng nếu người dùng đã tắt xác nhận. */
   const proposeOrExecute = useCallback(
-    (action: PendingAction, prompt: string) => {
+    (action: PendingAction, prompt: string, rows: ProposalRow[] | null) => {
       if (!session?.confirmBeforeCommit) return execute(action);
       pendingRef.current = action;
+      setProposal(rows);
+      setError(null);
       setAgentSays(prompt);
       speak(prompt);
       setState("confirming");
@@ -149,13 +178,18 @@ export function useConversation(
           // Validate trước khi đọc lại, để không xác nhận một ván sai luật.
           // Dùng hàm thuần từ domain — không ghi gì, không đụng lịch sử.
           const check = validateRoundEntries(session, entries);
-          if (!check.ok) return fail(check.error.message);
+          if (!check.ok) return fail(check.error.message, false);
+
+          const rows: ProposalRow[] = entries.map((e) => ({
+            playerId: e.playerId,
+            name: nameOf(e.playerId),
+            delta: e.delta,
+          }));
 
           return proposeOrExecute(
             { kind: "record", entries, requestId: `voice-${Date.now()}` },
-            confirmRoundPrompt(
-              entries.map((e) => ({ name: nameOf(e.playerId), delta: e.delta })),
-            ),
+            confirmRoundPrompt(rows),
+            rows,
           );
         }
 
@@ -169,16 +203,22 @@ export function useConversation(
               )
             : history?.rounds.find((r) => r.status === "recorded");
 
-          if (!target) return fail("Không còn ván nào để hủy.");
+          if (!target) return fail("Không còn ván nào để hủy.", false);
           return proposeOrExecute(
             { kind: "undo", roundId: target.id },
             `Hủy ván ${target.sequenceNo} nhé?`,
+            target.entries.map((e) => ({
+              playerId: e.playerId,
+              name: nameOf(e.playerId),
+              // Hủy = đảo dấu ván cũ, cho thấy điểm sẽ đổi thế nào.
+              delta: -e.delta,
+            })),
           );
         }
 
         case "query_scoreboard": {
           const board = tools.get_scoreboard({ session_id: session.id });
-          if (!board.ok) return fail(board.error.message);
+          if (!board.ok) return fail(board.error.message, false);
           return respond(describeScoreboard(board.data));
         }
 
@@ -187,7 +227,7 @@ export function useConversation(
             session_id: session.id,
             player_id: parsed.args.player_id,
           });
-          if (!score.ok) return fail(score.error.message);
+          if (!score.ok) return fail(score.error.message, false);
           return respond(
             describePlayerScore(
               score.data.name,
@@ -203,7 +243,7 @@ export function useConversation(
             session_id: session.id,
             limit: parsed.args.limit ?? 3,
           });
-          if (!history.ok) return fail(history.error.message);
+          if (!history.ok) return fail(history.error.message, false);
           return respond(
             describeHistory(
               history.data.rounds
@@ -224,14 +264,14 @@ export function useConversation(
             session_id: session.id,
             name: parsed.args.name,
           });
-          if (!added.ok) return fail(added.error.message);
+          if (!added.ok) return fail(added.error.message, false);
           onSessionChanged();
           return respond(`Đã thêm ${parsed.args.name} vào phiên.`);
         }
 
         case "end_session": {
           const ended = tools.end_session({ session_id: session.id });
-          if (!ended.ok) return fail(ended.error.message);
+          if (!ended.ok) return fail(ended.error.message, false);
           onSessionChanged();
           return respond(
             `Kết thúc phiên. ${describeScoreboard(ended.data.scoreboard)}`,
@@ -275,15 +315,35 @@ export function useConversation(
       }
 
       setState("understanding");
-      const parsed = await interpret(
+      setLastTranscript(text);
+      const result = await interpret(
         text,
         buildContext(session, questionRef.current ?? undefined),
       );
       questionRef.current = null;
-      handleIntent(parsed);
+      setLastMs(result.ms);
+
+      // Lỗi hạ tầng: báo lỗi + cho thử lại, KHÔNG rơi vào trạng thái chờ trả lời.
+      if (!result.intent) {
+        return fail(result.error ?? "Có lỗi xảy ra.", result.retryable);
+      }
+      handleIntent(result.intent);
     },
     [session, state, execute, respond, handleIntent],
   );
+
+  /**
+   * R — chạy lại đúng câu vừa nói.
+   *
+   * Trước đây gặp lỗi mạng/quota là phải nói lại cả câu. Giữa ván bài, đọc lại
+   * "Nam ăn 3, ba người kia mỗi người chung 1" lần thứ hai là đủ để người ta bỏ
+   * dùng app.
+   */
+  const retry = useCallback(() => {
+    if (!lastTranscript) return;
+    setError(null);
+    void processUtterance(lastTranscript);
+  }, [lastTranscript, processUtterance]);
 
   const startTurn = useCallback(() => {
     if (!session) return;
@@ -331,7 +391,11 @@ export function useConversation(
     agentSays,
     pendingPrompt: state === "confirming" ? agentSays : null,
     error,
+    proposal,
+    lastTranscript,
+    lastMs,
+    canRetry: canRetry && Boolean(lastTranscript) && state === "idle",
   };
 
-  return { view, startTurn, endTurn, cancelTurn, confirmByTap };
+  return { view, startTurn, endTurn, cancelTurn, confirmByTap, retry };
 }

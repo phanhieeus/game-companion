@@ -18,3 +18,6 @@ tsconfig.tsbuildinfo
 # Playwright
 test-results/
 playwright-report/
+
+# Screenshots (chạy lại bằng npx playwright test screenshot)
+screenshots/
