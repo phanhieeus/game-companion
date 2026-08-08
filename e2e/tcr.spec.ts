@@ -1,9 +1,18 @@
 import { expect, test, type Page } from "@playwright/test";
 import { installFakeSpeech, say } from "./fakeSpeech";
+import { resetServer, scriptAgent, recordThenSay, record, NAM_AN_3 } from "./fakeAgent";
 
 /** T·C·R — các affordance thêm vào sau khi chạy /tcr-apply. */
 
 const PLAYERS = ["Nam", "Hùng", "Lan", "Tú"];
+const CAU = "Nam ăn 3, ba người kia mỗi người chung 1";
+
+/** Kịch bản mặc định cho câu quen thuộc nhất. */
+const mockRecord = (page: Page) =>
+  scriptAgent(page, { [CAU]: recordThenSay(NAM_AN_3) });
+
+// Dữ liệu nằm ở server (ADR 13) — xoá localStorage không còn tác dụng.
+test.beforeEach(async ({ page }) => resetServer(page));
 
 async function startSession(page: Page): Promise<void> {
   await installFakeSpeech(page);
@@ -15,35 +24,10 @@ async function startSession(page: Page): Promise<void> {
   await expect(page.getByRole("button", { name: /Nhấn giữ để nói/ })).toBeVisible();
 }
 
-async function mockRecord(page: Page): Promise<void> {
-  await page.route("**/api/interpret", async (route) => {
-    const body = route.request().postDataJSON() as {
-      context: { players: { id: string; name: string }[] };
-    };
-    const id = (n: string) =>
-      body.context.players.find((p) => p.name === n)!.id;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        intent: "record_round",
-        args: {
-          entries: [
-            { player_id: id("Nam"), delta: 3 },
-            { player_id: id("Hùng"), delta: -1 },
-            { player_id: id("Lan"), delta: -1 },
-            { player_id: id("Tú"), delta: -1 },
-          ],
-        },
-      }),
-    });
-  });
-}
-
 test("T: ván đề xuất hiện thành con số, không chỉ đọc lên", async ({ page }) => {
   await startSession(page);
   await mockRecord(page);
-  await say(page, "Nam ăn 3, ba người kia mỗi người chung 1");
+  await say(page, CAU);
 
   const card = page.locator(".proposal");
   await expect(card).toBeVisible();
@@ -59,7 +43,7 @@ test("T: ván đã ghi hiện trong lịch sử", async ({ page }) => {
   await mockRecord(page);
   await expect(page.getByText("Chưa ghi ván nào.")).toBeVisible();
 
-  await say(page, "Nam ăn 3, ba người kia mỗi người chung 1");
+  await say(page, CAU);
   await page.getByRole("button", { name: "Ghi", exact: true }).click();
 
   // C-001 đổi danh sách "Ván gần đây" thành bảng nhiều cột.
@@ -72,7 +56,7 @@ test("T: ván đã ghi hiện trong lịch sử", async ({ page }) => {
 test("C: hủy ván bằng nút, không cần dùng giọng nói", async ({ page }) => {
   await startSession(page);
   await mockRecord(page);
-  await say(page, "Nam ăn 3, ba người kia mỗi người chung 1");
+  await say(page, CAU);
   await page.getByRole("button", { name: "Ghi", exact: true }).click();
   await expect(page.getByText("1 ván")).toBeVisible();
 
@@ -85,78 +69,51 @@ test("C: hủy ván bằng nút, không cần dùng giọng nói", async ({ page
 test("R: lỗi thì thử lại được mà không phải nói lại", async ({ page }) => {
   await startSession(page);
 
-  // Lần đầu hỏng, lần sau thành công — mô phỏng mạng chập chờn.
-  let attempt = 0;
-  await page.route("**/api/interpret", async (route) => {
-    attempt += 1;
-    if (attempt === 1) {
-      return route.fulfill({
-        status: 502,
-        contentType: "application/json",
-        body: JSON.stringify({ error: "Mất kết nối." }),
-      });
-    }
-    const body = route.request().postDataJSON() as {
-      context: { players: { id: string; name: string }[] };
-    };
-    const id = (n: string) =>
-      body.context.players.find((p) => p.name === n)!.id;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        intent: "record_round",
-        args: {
-          entries: [
-            { player_id: id("Nam"), delta: 2 },
-            { player_id: id("Hùng"), delta: -2 },
-          ],
-        },
-      }),
-    });
-  });
+  // Lần gọi model đầu tiên hỏng, lần sau chạy kịch bản — mạng chập chờn.
+  await scriptAgent(
+    page,
+    { "Nam ăn 2 của Hùng": recordThenSay(record(["Nam", 2], ["Hùng", -2])) },
+    { failures: 1 },
+  );
 
   await say(page, "Nam ăn 2 của Hùng");
-  await expect(page.getByText("Mất kết nối.")).toBeVisible();
+  await expect(page.getByText(/Gemini trả lỗi|Không gọi được/)).toBeVisible();
 
   // Nút thử lại dùng lại câu cũ — không đụng tới micro.
   await page.getByRole("button", { name: /Thử lại câu vừa nói/ }).click();
 
   await expect(page.locator(".proposal")).toBeVisible();
-  expect(attempt).toBe(2);
 });
 
-test("R: không hiện nút thử lại khi lỗi là do người dùng nói sai luật", async ({
+/**
+ * T: ván không cân phải NHÌN THẤY được trước khi bấm Ghi.
+ *
+ * Bản NLU cũ để tool layer chặn rồi hiện lỗi "Tổng phải bằng 0". Với agent, tool
+ * chỉ chạy SAU khi người chốt — nên chốt chặn thật sự là thẻ đề xuất: nó cộng
+ * tổng ngay trước mắt và nói thẳng là không cân. Bắt lỗi sớm hơn một nhịp so
+ * với trước, và không tốn thêm lượt gọi model nào.
+ */
+test("T: ván không cân thì thẻ đề xuất nói thẳng, trước khi ghi", async ({
   page,
 }) => {
   await startSession(page);
-  await page.route("**/api/interpret", async (route) => {
-    const body = route.request().postDataJSON() as {
-      context: { players: { id: string; name: string }[] };
-    };
-    const id = (n: string) =>
-      body.context.players.find((p) => p.name === n)!.id;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        intent: "record_round",
-        // Tổng = +2, sai luật zero-sum. Thử lại y hệt cũng sẽ sai.
-        args: {
-          entries: [
-            { player_id: id("Nam"), delta: 3 },
-            { player_id: id("Hùng"), delta: -1 },
-          ],
-        },
-      }),
-    });
+  // Tổng = +2, sai luật zero-sum.
+  await scriptAgent(page, {
+    "Nam ăn 3, Hùng chung 1": recordThenSay(
+      record(["Nam", 3], ["Hùng", -1]),
+      "Chưa ghi được.",
+    ),
   });
 
   await say(page, "Nam ăn 3, Hùng chung 1");
-  await expect(page.getByText(/Tổng điểm của ván phải bằng 0/)).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /Thử lại câu vừa nói/ }),
-  ).toBeHidden();
+
+  const sum = page.locator(".proposal-sum");
+  await expect(sum).toContainText("không cân");
+  await expect(page.locator(".proposal-sum.bad")).toBeVisible();
+
+  // Và nếu vẫn bấm Ghi thì tool layer chặn — không ván nào vào bảng.
+  await page.getByRole("button", { name: "Ghi", exact: true }).click();
+  await expect(page.getByText("Chưa ghi ván nào.")).toBeVisible();
 });
 
 /**
@@ -167,16 +124,9 @@ test("R: không hiện nút thử lại khi lỗi là do người dùng nói sai
  */
 test("sau khi agent hỏi lại, nút nói phải dùng được ngay", async ({ page }) => {
   await startSession(page);
-  await page.route("**/api/interpret", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        intent: "clarify",
-        args: { question: "6 điểm này ai chung?" },
-      }),
-    }),
-  );
+  await scriptAgent(page, {
+    "Nam thắng 6": [{ text: "6 điểm này ai chung?" }],
+  });
 
   await say(page, "Nam thắng 6");
   await expect(page.getByText("6 điểm này ai chung?")).toBeVisible();
@@ -190,7 +140,7 @@ test("khi đang chờ xác nhận, nút nói vẫn dùng được", async ({ pag
   await startSession(page);
   await mockRecord(page);
 
-  await say(page, "Nam ăn 3, ba người kia mỗi người chung 1");
+  await say(page, CAU);
   await expect(page.locator(".proposal")).toBeVisible();
 
   await expect(page.getByRole("button", { name: /Nhấn giữ để nói/ })).toBeEnabled();
@@ -200,7 +150,7 @@ test("nói xong rồi thả, nút trở lại chữ 'Nhấn giữ để nói'", 
   await startSession(page);
   await mockRecord(page);
 
-  await say(page, "Nam ăn 3, ba người kia mỗi người chung 1");
+  await say(page, CAU);
   await page.getByRole("button", { name: "Ghi", exact: true }).click();
 
   // Về đúng trạng thái ban đầu: chữ nút, và không còn hiệu ứng đang nghe.

@@ -1,39 +1,31 @@
 import { expect, test, type Page } from "@playwright/test";
 import { installFakeSpeech, say, spokenLines } from "./fakeSpeech";
+import { resetServer, scriptAgent, recordThenSay, record, type AgentReply } from "./fakeAgent";
 
 /**
- * Luồng end-to-end với intent giả lập.
+ * Luồng end-to-end với model giả lập.
  *
- * /api/interpret bị mock để test tất định và không đốt quota Gemini. Phần
- * "Gemini có hiểu đúng tiếng Việt không" được kiểm ở gemini.spec.ts.
- * Ở đây kiểm phần còn lại: xác nhận, validate, ghi điểm, tính lại bảng điểm.
+ * Chỉ GEMINI bị giả; server, tool layer và chốt HITL đều là code thật đang chạy
+ * (ADR 13). Phần "Gemini có hiểu đúng tiếng Việt không" kiểm ở gemini.spec.ts.
+ *
+ * Kịch bản là một MẢNG cho mỗi câu: một lượt nói có thể gọi model nhiều lần —
+ * bước đầu đề xuất tool, bước sau (đã đọc kết quả tool) mới nói ra câu trả lời.
  */
 
 const PLAYERS = ["Nam", "Hùng", "Lan", "Tú"];
 
-/** Trả intent cố định theo câu nói, thay cho LLM. */
-async function mockIntents(
+/** Đặt kịch bản ghi ván cho đúng câu sắp nói. */
+async function mockRound(
   page: Page,
-  reply: (transcript: string, players: { id: string; name: string }[]) => unknown,
+  text: string,
+  round: AgentReply,
+  reply = "Xong ván 1.",
 ): Promise<void> {
-  await page.route("**/api/interpret", async (route) => {
-    const body = route.request().postDataJSON() as {
-      transcript: string;
-      context: { players: { id: string; name: string }[] };
-    };
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(reply(body.transcript, body.context.players)),
-    });
-  });
+  await scriptAgent(page, { [text]: recordThenSay(round, reply) });
 }
 
-function idOf(players: { id: string; name: string }[], name: string): string {
-  const found = players.find((p) => p.name === name);
-  if (!found) throw new Error(`Không có người chơi tên ${name}`);
-  return found.id;
-}
+// Dữ liệu nằm ở server (ADR 13) — mỗi test bắt đầu từ con số không.
+test.beforeEach(async ({ page }) => resetServer(page));
 
 async function startSession(page: Page): Promise<void> {
   await installFakeSpeech(page);
@@ -80,19 +72,10 @@ test("tạo phiên rồi hiện bảng điểm 4 người, tất cả 0 điểm"
 
 test("D1: nói ghi điểm, xác nhận, bảng điểm cập nhật", async ({ page }) => {
   await startSession(page);
-  await mockIntents(page, (_t, players) => ({
-    intent: "record_round",
-    args: {
-      entries: [
-        { player_id: idOf(players, "Nam"), delta: 3 },
-        { player_id: idOf(players, "Hùng"), delta: -1 },
-        { player_id: idOf(players, "Lan"), delta: -1 },
-        { player_id: idOf(players, "Tú"), delta: -1 },
-      ],
-    },
-  }));
+  const cau = "Nam ăn 3, ba người kia mỗi người chung 1";
+  await mockRound(page, cau, record(["Nam", 3], ["Hùng", -1], ["Lan", -1], ["Tú", -1]));
 
-  await say(page, "Nam ăn 3, ba người kia mỗi người chung 1");
+  await say(page, cau);
 
   // Phải hỏi xác nhận TRƯỚC khi ghi, và cho NHÌN THẤY từng con số.
   const card = page.locator(".proposal");
@@ -110,15 +93,7 @@ test("D1: nói ghi điểm, xác nhận, bảng điểm cập nhật", async ({ 
 
 test("từ chối xác nhận thì không ghi gì", async ({ page }) => {
   await startSession(page);
-  await mockIntents(page, (_t, players) => ({
-    intent: "record_round",
-    args: {
-      entries: [
-        { player_id: idOf(players, "Nam"), delta: 2 },
-        { player_id: idOf(players, "Hùng"), delta: -2 },
-      ],
-    },
-  }));
+  await mockRound(page, "Nam ăn 2, Hùng chung 2", record(["Nam", 2], ["Hùng", -2]));
 
   await say(page, "Nam ăn 2, Hùng chung 2");
   await expect(page.getByText(/Ghi ván này nhé\?/)).toBeVisible();
@@ -130,15 +105,7 @@ test("từ chối xác nhận thì không ghi gì", async ({ page }) => {
 
 test("nói 'ừ' để xác nhận bằng giọng nói, không cần bấm nút", async ({ page }) => {
   await startSession(page);
-  await mockIntents(page, (_t, players) => ({
-    intent: "record_round",
-    args: {
-      entries: [
-        { player_id: idOf(players, "Lan"), delta: 4 },
-        { player_id: idOf(players, "Tú"), delta: -4 },
-      ],
-    },
-  }));
+  await mockRound(page, "Lan ăn 4 của Tú", record(["Lan", 4], ["Tú", -4]));
 
   await say(page, "Lan ăn 4 của Tú");
   await expect(page.getByText(/Ghi ván này nhé\?/)).toBeVisible();
@@ -149,22 +116,30 @@ test("nói 'ừ' để xác nhận bằng giọng nói, không cần bấm nút"
   expect(await readScoreboard(page)).toMatchObject({ Lan: 4, Tú: -4 });
 });
 
-test("tổng khác 0 bị chặn, không ghi và có báo lỗi", async ({ page }) => {
+/**
+ * Đổi so với bản NLU cũ: lúc trước tool layer chặn rồi UI hiện thẳng câu lỗi
+ * "Tổng phải bằng 0". Với agent, tool chỉ chạy SAU khi người chốt — nên chốt
+ * chặn đầu tiên là thẻ đề xuất, nó cộng tổng ngay trước mắt. Bắt sớm hơn một
+ * nhịp, và tool layer vẫn là hàng rào cuối nếu người dùng cứ bấm Ghi.
+ */
+test("tổng khác 0: thẻ đề xuất báo không cân, và ghi vẫn không lọt", async ({
+  page,
+}) => {
   await startSession(page);
-  await mockIntents(page, (_t, players) => ({
-    intent: "record_round",
-    args: {
-      // Cố tình sai: tổng = +2, giống khi STT nghe nhầm số.
-      entries: [
-        { player_id: idOf(players, "Nam"), delta: 3 },
-        { player_id: idOf(players, "Hùng"), delta: -1 },
-      ],
-    },
-  }));
+  // Cố tình sai: tổng = +2, giống khi STT nghe nhầm số.
+  await mockRound(
+    page,
+    "Nam ăn 3, Hùng chung 1",
+    record(["Nam", 3], ["Hùng", -1]),
+    "Chưa ghi được.",
+  );
 
   await say(page, "Nam ăn 3, Hùng chung 1");
 
-  await expect(page.getByText(/Tổng điểm của ván phải bằng 0/)).toBeVisible();
+  await expect(page.locator(".proposal-sum.bad")).toContainText("không cân");
+
+  await page.getByRole("button", { name: "Ghi", exact: true }).click();
+
   await expect(page.getByText("0 ván")).toBeVisible();
   expect(await readScoreboard(page)).toEqual({ Nam: 0, Hùng: 0, Lan: 0, Tú: 0 });
 });
@@ -172,19 +147,15 @@ test("tổng khác 0 bị chặn, không ghi và có báo lỗi", async ({ page 
 test("hỏi bảng điểm thì trả lời thẳng, không hỏi xác nhận", async ({ page }) => {
   await startSession(page);
 
-  await mockIntents(page, (transcript, players) =>
-    transcript === "ai đang dẫn"
-      ? { intent: "query_scoreboard", args: {} }
-      : {
-          intent: "record_round",
-          args: {
-            entries: [
-              { player_id: idOf(players, "Nam"), delta: 5 },
-              { player_id: idOf(players, "Hùng"), delta: -5 },
-            ],
-          },
-        },
-  );
+  // Hỏi bảng điểm là vòng ReAct hai bước thật: gọi get_scoreboard, đọc kết quả,
+  // rồi mới nói. Ghi ván thì dừng lại chờ người chốt.
+  await scriptAgent(page, {
+    "Nam ăn 5 của Hùng": recordThenSay(record(["Nam", 5], ["Hùng", -5])),
+    "ai đang dẫn": [
+      { call: { name: "get_scoreboard", args: {} } },
+      { text: "Nam dẫn với 5 điểm." },
+    ],
+  });
 
   await say(page, "Nam ăn 5 của Hùng");
   await page.getByRole("button", { name: "Ghi", exact: true }).click();
@@ -198,27 +169,24 @@ test("hỏi bảng điểm thì trả lời thẳng, không hỏi xác nhận", 
 
 test("hủy ván thì bảng điểm quay lại như trước", async ({ page }) => {
   await startSession(page);
-  await mockIntents(page, (transcript, players) =>
-    transcript === "nhầm rồi hủy ván vừa nãy"
-      ? { intent: "undo_round", args: {} }
-      : {
-          intent: "record_round",
-          args: {
-            entries: [
-              { player_id: idOf(players, "Nam"), delta: 3 },
-              { player_id: idOf(players, "Hùng"), delta: -3 },
-            ],
-          },
-        },
-  );
+  await scriptAgent(page, {
+    "Nam ăn 3 của Hùng": recordThenSay(record(["Nam", 3], ["Hùng", -3])),
+    "nhầm rồi hủy ván vừa nãy": [
+      { call: { name: "delete_round", args: {} } },
+      { text: "Hủy rồi." },
+    ],
+  });
 
   await say(page, "Nam ăn 3 của Hùng");
   await page.getByRole("button", { name: "Ghi", exact: true }).click();
   await expect(page.getByText("1 ván")).toBeVisible();
 
   await say(page, "nhầm rồi hủy ván vừa nãy");
-  await expect(page.getByText(/Hủy ván 1 nhé\?/)).toBeVisible();
-  await page.getByRole("button", { name: "Ghi", exact: true }).click();
+
+  // Xóa ván không có con số nào để vẽ, nên thẻ chỉ có câu hỏi + hai nút.
+  await expect(page.getByText(/Xóa ván 1 nhé\?/)).toBeVisible();
+  await expect(page.locator(".proposal-row")).toHaveCount(0);
+  await page.getByRole("button", { name: "Đồng ý" }).click();
 
   await expect(page.getByText("0 ván")).toBeVisible();
   expect(await readScoreboard(page)).toEqual({ Nam: 0, Hùng: 0, Lan: 0, Tú: 0 });
@@ -226,10 +194,9 @@ test("hủy ván thì bảng điểm quay lại như trước", async ({ page })
 
 test("câu hỏi lại (clarify) không ghi gì và chờ trả lời", async ({ page }) => {
   await startSession(page);
-  await mockIntents(page, () => ({
-    intent: "clarify",
-    args: { question: "6 điểm này ai chung? Chia đều 3 người còn lại nhé?" },
-  }));
+  await scriptAgent(page, {
+    "Nam thắng 6": [{ text: "6 điểm này ai chung? Chia đều 3 người còn lại nhé?" }],
+  });
 
   await say(page, "Nam thắng 6");
 
@@ -239,15 +206,7 @@ test("câu hỏi lại (clarify) không ghi gì và chờ trả lời", async ({
 
 test("tắt xác nhận trong cài đặt thì ghi thẳng", async ({ page }) => {
   await startSession(page);
-  await mockIntents(page, (_t, players) => ({
-    intent: "record_round",
-    args: {
-      entries: [
-        { player_id: idOf(players, "Tú"), delta: 7 },
-        { player_id: idOf(players, "Lan"), delta: -7 },
-      ],
-    },
-  }));
+  await mockRound(page, "Tú ăn 7 của Lan", record(["Tú", 7], ["Lan", -7]));
 
   await page.getByRole("button", { name: "Cài đặt" }).click();
   await page.getByRole("button", { name: "Đang bật" }).click();
@@ -261,15 +220,7 @@ test("tắt xác nhận trong cài đặt thì ghi thẳng", async ({ page }) =>
 
 test("mở lại app vẫn còn phiên đang chơi", async ({ page }) => {
   await startSession(page);
-  await mockIntents(page, (_t, players) => ({
-    intent: "record_round",
-    args: {
-      entries: [
-        { player_id: idOf(players, "Nam"), delta: 9 },
-        { player_id: idOf(players, "Hùng"), delta: -9 },
-      ],
-    },
-  }));
+  await mockRound(page, "Nam ăn 9 của Hùng", record(["Nam", 9], ["Hùng", -9]));
 
   await say(page, "Nam ăn 9 của Hùng");
   await page.getByRole("button", { name: "Ghi", exact: true }).click();
@@ -283,16 +234,10 @@ test("mở lại app vẫn còn phiên đang chơi", async ({ page }) => {
 
 test("lỗi từ proxy được báo ra, không ghi gì", async ({ page }) => {
   await startSession(page);
-  await page.route("**/api/interpret", (route) =>
-    route.fulfill({
-      status: 502,
-      contentType: "application/json",
-      body: JSON.stringify({ error: "Hết quota Gemini hôm nay." }),
-    }),
-  );
+  await scriptAgent(page, {}, { failures: 1 });
 
   await say(page, "Nam ăn 3");
 
-  await expect(page.getByText("Hết quota Gemini hôm nay.")).toBeVisible();
+  await expect(page.getByText(/Gemini trả lỗi|Không gọi được/)).toBeVisible();
   await expect(page.getByText("0 ván")).toBeVisible();
 });

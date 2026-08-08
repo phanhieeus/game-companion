@@ -8,7 +8,7 @@
  * đổi và bảng điểm đứng im sau khi ghi điểm. Xem repository.test.ts.
  */
 
-import type { Session } from "../domain/types";
+import type { Session } from "../../shared/types.ts";
 
 export interface SessionRepository {
   /** Trả về bản sao — sửa nó không ảnh hưởng dữ liệu đã lưu. */

@@ -5,8 +5,12 @@
 > (`src/tools/index.ts`) — hợp đồng ổn định theo
 > [decision 0001](../docs/decisions/0001-tool-contracts-forward-compatible-with-plugin-platform.md),
 > cộng với props của các component mới. Cột "Auth" thay bằng "Ghi/Đọc" vì không
-> có auth (ADR quyết định 2). Endpoint HTTP duy nhất (`/api/interpret`) không đổi
-> trong vòng này nên chỉ ghi lại để đối chiếu.
+> có auth (ADR quyết định 2). Endpoint HTTP duy nhất chỉ ghi lại để đối chiếu.
+>
+> **Sửa 2026-08-08 (C-009):** `/api/interpret` (single-shot: một câu → một intent)
+> bị thay bằng `/api/agent` (một lượt trong vòng ReAct nhiều bước). Không giữ song
+> song: hai đường "hiểu" mà chỉ một đường sống chính là thứ drift file này tồn tại
+> để chặn. `src/nlu/` và `scripts/check-nlu.mjs` xoá theo.
 
 Written BEFORE any code. Cards build TO this table.
 Lý do file này tồn tại: producer/consumer drift — core trả một shape, UI giả định
@@ -27,10 +31,54 @@ shape khác, cả hai đều "xanh".
 | tool | `get_history` | Đọc | `{ session_id, limit? }` | `Result<{ rounds: Round[] }>` |
 | tool | `get_scoreboard` | Đọc | `{ session_id }` | `Result<Scoreboard>` |
 | tool | `get_round_events` | Đọc | `{ session_id, round_id }` | `Result<{ events: RoundEvent[] }>` |
-| http | `POST /api/interpret` | Đọc | `{ transcript, context }` | `{ intent, args }` \| `{ error }` |
+| http | `POST /api/agent` | Đọc | `{ messages: AgentMessage[], tools: Declaration[], context }` | `{ call: {name, args} }` \| `{ text }` \| `{ error, retryable }` |
 
 **Nhập tay dùng lại `record_round` với `source: "manual"`** — không thêm tool mới
 (ADR quyết định 4). `source` đã có sẵn trong `Round` từ đầu.
+
+## Interfaces — HTTP API (thêm 2026-08-08, C-011…C-013)
+
+> **Sửa lớn (ADR 13):** seam thật chuyển từ tool layer trong tiến trình sang HTTP.
+> Bảng tool layer bên dưới KHÔNG đổi chữ ký — nó chỉ chuyển chỗ ở, từ trình duyệt
+> sang server. Client không còn gọi tool trực tiếp; nó gọi các endpoint này.
+
+| Kind | Name | Ghi/Đọc | Request shape | Response shape |
+|---|---|---|---|---|
+| http | `POST /api/sessions` | Ghi | `{ players: {name}[], me_player_name? }` | `{ session: Session }` |
+| http | `GET /api/sessions/:id` | Đọc | — | `{ session: Session }` |
+| http | `GET /api/sessions/active` | Đọc | — | `{ session: Session \| null }` |
+| http | `POST /api/sessions/:id/rounds` | Ghi | `{ entries: {playerId, delta}[], client_request_id? }` | `{ session, scoreboard }` |
+| http | `PATCH /api/sessions/:id/rounds/:roundId` | Ghi | `{ entries: {playerId, delta}[] }` | `{ session, scoreboard }` |
+| http | `DELETE /api/sessions/:id/rounds/:roundId` | Ghi | — | `{ session, scoreboard }` |
+| http | `POST /api/sessions/:id/undo` \| `/redo` | Ghi | — | `{ session, label }` |
+| http | `GET /api/sessions/:id/rounds/:roundId/events` | Đọc | — | `{ events: RoundEvent[] }` |
+| http | `POST /api/sessions/:id/players` | Ghi | `{ name }` | `{ session }` |
+| http | `DELETE /api/sessions/:id/players/:playerId` | Ghi | — | `{ session }` |
+| http | `PATCH /api/sessions/:id/settings` | Ghi | `{ confirm_before_commit }` | `{ session }` |
+| http | `POST /api/sessions/:id/end` | Ghi | — | `{ session }` |
+| http | `POST /api/sessions/:id/agent` | Ghi | `{ text }` | `{ outcome: AgentOutcome, session, steps }` |
+| http | `POST /api/sessions/:id/agent/confirm` | Ghi | `{ accepted: boolean }` | `{ outcome, session, steps }` |
+
+Lỗi dùng chung một dạng: `{ error: { code, message }, retryable }` — `code` lấy
+nguyên từ tool layer (`ROUND_NOT_ZERO_SUM`…) nên UI phân biệt được lỗi luật chơi
+với lỗi hạ tầng.
+
+**Chốt HITL nằm ở SERVER**: `/agent` trả `outcome.type === "confirm"` và server
+giữ lời gọi đang chờ của phiên đó cho tới khi `/agent/confirm` tới. Client không
+bao giờ cầm được quyền chạy tool.
+
+## Interfaces — mini-agent (chạy trên server sau ADR 13)
+
+| Kind | Name | Ghi/Đọc | Request shape | Response shape |
+|---|---|---|---|---|
+| type | `AgentTool` | — | `{ name, description, parameters, needsConfirm?, describe?, propose?, run }` | — |
+| fn | `runAgent` | Ghi | `(userText: string, ctx: ToolContext)` | `Promise<{ outcome: AgentOutcome, changed, steps }>` |
+| fn | `resumeAgent` | Ghi | `(call: ToolCall, accepted: boolean, ctx)` | `Promise<StepResult>` |
+| type | `AgentOutcome` | — | — | `{final,text}` \| `{confirm,prompt,rows,call}` \| `{clarify,question}` \| `{error,message,retryable}` |
+| store | `MemoryStore` | Ghi+Đọc | — | `{ facts, remember, forget, turns, appendTurn, clearTurns }` |
+
+`needsConfirm` và `propose` khai ở TOOL, không do model quyết (ADR 12) — model
+chỉ đề xuất, code quyết định hỏi gì và hiện con số nào.
 
 ## Interfaces — component props (mới trong vòng này)
 

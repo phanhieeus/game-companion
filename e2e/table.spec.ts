@@ -1,13 +1,17 @@
 import { expect, test, type Page } from "@playwright/test";
 import { installFakeSpeech, say } from "./fakeSpeech";
+import { resetServer, scriptAgent, recordThenSay, record } from "./fakeAgent";
 
 /** C-001 — bảng điểm nhiều cột theo ván. Verify theo cards/C-001.md. */
+
+// Dữ liệu nằm ở server (ADR 13) — mỗi test phải bắt đầu từ con số không.
+test.beforeEach(async ({ page }) => resetServer(page));
 
 async function startSession(page: Page, names: string[]): Promise<void> {
   await installFakeSpeech(page);
   await page.goto("/");
-  for (const [i, name] of names.entries()) {
-    if (i >= 4) await page.getByRole("button", { name: "+ Thêm người chơi" }).click();
+  for (let i = 4; i < names.length; i += 1) {
+    await page.getByRole("button", { name: "+ Thêm người chơi" }).click();
   }
   for (const [i, name] of names.entries()) {
     await page.getByLabel(`Tên người chơi ${i + 1}`).fill(name);
@@ -16,37 +20,26 @@ async function startSession(page: Page, names: string[]): Promise<void> {
   await expect(page.getByRole("button", { name: /Nhấn giữ để nói/ })).toBeVisible();
 }
 
-/** Ghi một ván qua đúng luồng giọng nói (mock intent), rồi xác nhận. */
-async function record(page: Page, deltas: Record<string, number>): Promise<void> {
-  await page.route("**/api/interpret", async (route) => {
-    const body = route.request().postDataJSON() as {
-      context: { players: { id: string; name: string }[] };
-    };
-    const id = (n: string) => body.context.players.find((p) => p.name === n)!.id;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        intent: "record_round",
-        args: {
-          entries: Object.entries(deltas).map(([name, delta]) => ({
-            player_id: id(name),
-            delta,
-          })),
-        },
-      }),
-    });
+/** Ghi một ván qua đúng luồng giọng nói (Gemini giả), rồi xác nhận. */
+async function addRound(
+  page: Page,
+  deltas: Record<string, number>,
+): Promise<void> {
+  await scriptAgent(page, {
+    "ghi ván": recordThenSay(
+      record(...(Object.entries(deltas) as [string, number][])),
+    ),
   });
   await say(page, "ghi ván");
   await page.getByRole("button", { name: "Ghi", exact: true }).click();
-  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await expect(page.locator(".proposal")).toBeHidden();
 }
 
 test("mỗi ván một hàng, số ván ở cột đầu, ván mới nhất ở DƯỚI", async ({ page }) => {
   await startSession(page, ["Nam", "Hùng", "Lan", "Tú"]);
-  await record(page, { Nam: 3, Hùng: -1, Lan: -1, Tú: -1 });
-  await record(page, { Nam: -2, Hùng: 5, Lan: -2, Tú: -1 });
-  await record(page, { Nam: 1, Hùng: -3, Lan: 1, Tú: 1 });
+  await addRound(page, { Nam: 3, Hùng: -1, Lan: -1, Tú: -1 });
+  await addRound(page, { Nam: -2, Hùng: 5, Lan: -2, Tú: -1 });
+  await addRound(page, { Nam: 1, Hùng: -3, Lan: 1, Tú: 1 });
 
   const rows = page.locator(".rounds-table tbody tr");
   await expect(rows).toHaveCount(3);
@@ -58,7 +51,7 @@ test("mỗi ván một hàng, số ván ở cột đầu, ván mới nhất ở 
 
 test("ô hiện delta của đúng người trong đúng ván", async ({ page }) => {
   await startSession(page, ["Nam", "Hùng", "Lan", "Tú"]);
-  await record(page, { Nam: 3, Hùng: -1, Lan: -1, Tú: -1 });
+  await addRound(page, { Nam: 3, Hùng: -1, Lan: -1, Tú: -1 });
 
   const cells = page.locator(".rounds-table tbody tr").first().locator("td");
   // cột 0..3 = Nam, Hùng, Lan, Tú (cột cuối là nút hủy)
@@ -69,9 +62,9 @@ test("ô hiện delta của đúng người trong đúng ván", async ({ page })
 
 test("PRD metric #1: tổng mỗi cột khớp chính xác bảng xếp hạng", async ({ page }) => {
   await startSession(page, ["Nam", "Hùng", "Lan", "Tú"]);
-  await record(page, { Nam: 3, Hùng: -1, Lan: -1, Tú: -1 });
-  await record(page, { Nam: -2, Hùng: 5, Lan: -2, Tú: -1 });
-  await record(page, { Nam: 1, Hùng: -3, Lan: 1, Tú: 1 });
+  await addRound(page, { Nam: 3, Hùng: -1, Lan: -1, Tú: -1 });
+  await addRound(page, { Nam: -2, Hùng: 5, Lan: -2, Tú: -1 });
+  await addRound(page, { Nam: 1, Hùng: -3, Lan: 1, Tú: 1 });
 
   // Tổng ở chân bảng, theo thứ tự cột = thứ tự người chơi lúc tạo phiên.
   const footer = page.locator(".rounds-table tfoot td");
@@ -88,7 +81,7 @@ test("PRD metric #1: tổng mỗi cột khớp chính xác bảng xếp hạng",
     const cells = bodyRows.nth(r).locator("td");
     for (const [i, name] of ["Nam", "Hùng", "Lan", "Tú"].entries()) {
       const text = (await cells.nth(i).innerText()).trim();
-      if (text !== "·") summed[name] += Number(text.replace("+", ""));
+      if (text !== "·") summed[name] = (summed[name] ?? 0) + Number(text.replace("+", ""));
     }
   }
 
@@ -100,7 +93,7 @@ test("PRD metric #1: tổng mỗi cột khớp chính xác bảng xếp hạng",
 test("PRD metric #2: 5 người, viewport 360px — KHÔNG cuộn ngang", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 740 });
   await startSession(page, ["Nam", "Hùng", "Lan", "Tú", "Minh"]);
-  await record(page, { Nam: 4, Hùng: -1, Lan: -1, Tú: -1, Minh: -1 });
+  await addRound(page, { Nam: 4, Hùng: -1, Lan: -1, Tú: -1, Minh: -1 });
 
   const box = await page.locator(".rounds-table").evaluate((el) => ({
     scrollWidth: el.scrollWidth,
@@ -120,8 +113,8 @@ test("PRD metric #2: 5 người, viewport 360px — KHÔNG cuộn ngang", async 
 
 test("hủy một ván từ bảng thì hàng biến mất và tổng tính lại", async ({ page }) => {
   await startSession(page, ["Nam", "Hùng", "Lan", "Tú"]);
-  await record(page, { Nam: 3, Hùng: -1, Lan: -1, Tú: -1 });
-  await record(page, { Nam: 2, Hùng: -2, Lan: 1, Tú: -1 });
+  await addRound(page, { Nam: 3, Hùng: -1, Lan: -1, Tú: -1 });
+  await addRound(page, { Nam: 2, Hùng: -2, Lan: 1, Tú: -1 });
   await expect(page.locator(".rounds-table tbody tr")).toHaveCount(2);
 
   await page.getByRole("button", { name: "Hủy ván 2" }).click();
@@ -134,9 +127,9 @@ test("hủy một ván từ bảng thì hàng biến mất và tổng tính lạ
 
 test("C-002: đổi thứ tự ván, và lựa chọn sống sót qua reload", async ({ page }) => {
   await startSession(page, ["Nam", "Hùng", "Lan", "Tú"]);
-  await record(page, { Nam: 3, Hùng: -1, Lan: -1, Tú: -1 });
-  await record(page, { Nam: -2, Hùng: 5, Lan: -2, Tú: -1 });
-  await record(page, { Nam: 1, Hùng: -3, Lan: 1, Tú: 1 });
+  await addRound(page, { Nam: 3, Hùng: -1, Lan: -1, Tú: -1 });
+  await addRound(page, { Nam: -2, Hùng: 5, Lan: -2, Tú: -1 });
+  await addRound(page, { Nam: 1, Hùng: -3, Lan: 1, Tú: 1 });
 
   const rows = page.locator(".rounds-table tbody tr");
   // Mặc định: mới nhất ở dưới.
@@ -159,7 +152,7 @@ test("C-002: nút về đầu trang ẩn khi ở đầu, hiện sau khi cuộn",
   // C-005 bỏ bảng trên nên trang ngắn hẳn đi — cần nhiều ván hơn mới cuộn được.
   // Chính đó là bằng chứng C-005 có tác dụng.
   for (let i = 0; i < 16; i += 1) {
-    await record(page, { Nam: 1, Hùng: -1, Lan: 1, Tú: -1 });
+    await addRound(page, { Nam: 1, Hùng: -1, Lan: 1, Tú: -1 });
   }
 
   const button = page.getByRole("button", { name: "Về đầu trang" });
@@ -178,7 +171,7 @@ test("C-003 / PRD metric #3: sau 10 ván 5 người, nút Voice vẫn trong màn
   await page.setViewportSize({ width: 360, height: 740 });
   await startSession(page, ["Nam", "Hùng", "Lan", "Tú", "Minh"]);
   for (let i = 0; i < 10; i += 1) {
-    await record(page, { Nam: 2, Hùng: -1, Lan: -1, Tú: 1, Minh: -1 });
+    await addRound(page, { Nam: 2, Hùng: -1, Lan: -1, Tú: 1, Minh: -1 });
   }
   await expect(page.locator(".rounds-table tbody tr")).toHaveCount(10);
 

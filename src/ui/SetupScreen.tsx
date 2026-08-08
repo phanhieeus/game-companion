@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MAX_PLAYERS, MIN_PLAYERS } from "../domain/types";
+import { MAX_PLAYERS, MIN_PLAYERS } from "../../shared/types";
 import {
   currentOrigin,
   isSecureOrigin,

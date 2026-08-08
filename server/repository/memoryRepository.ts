@@ -1,5 +1,5 @@
-import type { Session } from "../domain/types";
-import type { SessionRepository } from "./types";
+import type { Session } from "../../shared/types.ts";
+import type { SessionRepository } from "./types.ts";
 
 /** Dùng trong test và làm fallback khi localStorage không khả dụng. */
 export class MemorySessionRepository implements SessionRepository {

@@ -4,15 +4,15 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n web,api -c cyan,magenta \"vite\" \"node server/index.js\"",
+    "dev": "concurrently -n web,api -c cyan,magenta \"vite\" \"node server/index.ts\"",
     "dev:web": "vite",
-    "dev:api": "node server/index.js",
+    "dev:api": "node server/index.ts",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "check:nlu": "node scripts/check-nlu.mjs"
+    "start": "node server/index.ts"
   },
   "dependencies": {
     "react": "^19.2.0",
@@ -20,6 +20,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.2.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.0",

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Round, Scoreboard, Session } from "../domain/types";
-import { wasModified } from "../domain/scoring";
-import type { DraftEntry } from "../domain/scoring";
+import type { Round, Scoreboard, Session } from "../../shared/types";
+import { wasModified } from "../../shared/types";
+import type { DraftEntry } from "../../shared/types";
 
 export type RoundOrder = "newest-last" | "newest-first";
 
@@ -15,8 +15,10 @@ interface Props {
   scoreboard: Scoreboard;
   onUndo: (roundId: string) => void;
   /** Trả về thông báo lỗi, hoặc null nếu lưu được. */
-  onSaveEdit: (roundId: string, entries: DraftEntry[]) => string | null;
-  onAddRound: (entries: DraftEntry[]) => string | null;
+  // Ghi điểm giờ là một chuyến đi mạng (ADR 13) — trả về Promise, và lỗi
+  // về dưới dạng câu chữ để hiện ngay tại hàng đang sửa.
+  onSaveEdit: (roundId: string, entries: DraftEntry[]) => Promise<string | null>;
+  onAddRound: (entries: DraftEntry[]) => Promise<string | null>;
   onShowHistory: (round: Round) => void;
 }
 
@@ -94,10 +96,12 @@ export function RoundsTable({
     setError(null);
   };
 
-  const save = () => {
+  const save = async () => {
     const entries = parseDraft(draft);
     const problem =
-      editing === "new" ? onAddRound(entries) : onSaveEdit(editing!, entries);
+      editing === "new"
+        ? await onAddRound(entries)
+        : await onSaveEdit(editing!, entries);
     if (problem) return setError(problem);
     cancel();
   };
@@ -280,7 +284,7 @@ export function RoundsTable({
               type="button"
               className="save"
               disabled={draftSum !== 0 || parsed.length === 0}
-              onClick={save}
+              onClick={() => void save()}
             >
               Lưu
             </button>

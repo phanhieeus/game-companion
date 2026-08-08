@@ -18,10 +18,10 @@ import type {
   Scoreboard,
   ScoringConfig,
   Session,
-} from "../domain/types";
-import { DEFAULT_SCORING_CONFIG, MAX_PLAYERS } from "../domain/types";
-import type { Result } from "../domain/errors";
-import { err, ok } from "../domain/errors";
+} from "../../shared/types.ts";
+import { DEFAULT_SCORING_CONFIG, MAX_PLAYERS } from "../../shared/types.ts";
+import type { Result } from "../domain/errors.ts";
+import { err, ok } from "../domain/errors.ts";
 import {
   computeScoreboard,
   describeAction,
@@ -34,8 +34,8 @@ import {
   validateRoundEntries,
   type DraftEntry,
   type TimelineItem,
-} from "../domain/scoring";
-import type { SessionRepository } from "../repository/types";
+} from "../domain/scoring.ts";
+import type { SessionRepository } from "../repository/types.ts";
 
 let idCounter = 0;
 function newId(prefix: string): string {

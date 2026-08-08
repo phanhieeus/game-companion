@@ -3,7 +3,7 @@
  * cầm bài chứ không nhìn màn hình (docs/product/overview.md, nguyên tắc UX).
  */
 
-import type { Scoreboard } from "../domain/types";
+import type { Scoreboard } from "../../shared/types";
 
 export function signed(delta: number): string {
   return delta > 0 ? `+${delta}` : `${delta}`;

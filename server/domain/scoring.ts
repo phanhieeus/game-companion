@@ -12,10 +12,13 @@ import type {
   Scoreboard,
   ScoringConfig,
   Session,
-} from "./types";
-import { MAX_PLAYERS, MIN_PLAYERS } from "./types";
-import type { Result } from "./errors";
-import { err, ok } from "./errors";
+} from "../../shared/types.ts";
+import { MAX_PLAYERS, MIN_PLAYERS } from "../../shared/types.ts";
+import type { DraftEntry } from "../../shared/types.ts";
+// `roundEvents` / `wasModified` sống ở shared/: cả server lẫn client đều đọc.
+import { roundEvents, wasModified } from "../../shared/types.ts";
+import type { Result } from "./errors.ts";
+import { err, ok } from "./errors.ts";
 
 /** Điểm của một người = startingScore + tổng delta các ván 'recorded'. */
 export function computeScoreboard(session: Session): Scoreboard {
@@ -58,11 +61,6 @@ export function computeScoreboard(session: Session): Scoreboard {
   });
 
   return { rows, roundsPlayed: recorded.length };
-}
-
-export interface DraftEntry {
-  playerId: string;
-  delta: number;
 }
 
 /**
@@ -161,20 +159,8 @@ export function totalOf(entries: ScoreEntry[] | DraftEntry[]): number {
   return entries.reduce((acc, e) => acc + e.delta, 0);
 }
 
-/**
- * Đọc nhật ký của một ván, chịu được dữ liệu cũ chưa có field `events`.
- *
- * localStorage của người dùng đã có phiên ghi từ trước khi audit log tồn tại.
- * Đọc thẳng `round.events.map(...)` sẽ nổ ngay khi mở app.
- */
-export function roundEvents(round: Round): RoundEvent[] {
-  return round.events ?? [];
-}
-
-/** Có từng bị sửa hoặc hủy chưa — quyết định hiện dấu trên hàng. */
-export function wasModified(round: Round): boolean {
-  return roundEvents(round).some((e) => e.kind !== "created");
-}
+export { roundEvents, wasModified };
+export type { DraftEntry };
 
 /** Một mục nhật ký kèm ván chứa nó — dùng cho ngăn xếp undo toàn phiên. */
 export interface TimelineItem {

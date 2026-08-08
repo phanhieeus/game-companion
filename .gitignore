@@ -21,3 +21,7 @@ playwright-report/
 
 # Screenshots (chạy lại bằng npx playwright test screenshot)
 screenshots/
+
+# Dữ liệu phiên do server giữ (ADR 13/14) — không commit
+data/
+.e2e-data/

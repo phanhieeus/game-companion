@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { computeScoreboard, validateRoundEntries } from "./scoring";
-import type { Round, Session } from "./types";
-import { DEFAULT_SCORING_CONFIG } from "./types";
+import { computeScoreboard, validateRoundEntries } from "./scoring.ts";
+import type { Round, Session } from "../../shared/types.ts";
+import { DEFAULT_SCORING_CONFIG } from "../../shared/types.ts";
 
 function makeSession(rounds: Round[] = []): Session {
   return {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { MemorySessionRepository } from "../repository/memoryRepository";
-import { createTools, __resetIdCounter, type Tools } from "./index";
+import { MemorySessionRepository } from "../repository/memoryRepository.ts";
+import { createTools, __resetIdCounter, type Tools } from "./index.ts";
 
 const PLAYERS = [
   { name: "Nam" },

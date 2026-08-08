@@ -1,12 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
 import { installFakeSpeech, say } from "./fakeSpeech";
+import { resetServer, scriptAgent, recordThenSay, record } from "./fakeAgent";
 
 /**
  * Sửa ô tại chỗ + thêm hàng + nhật ký thay đổi.
  *
- * Không test nào ở đây mock `/api/interpret` cho phần nhập tay — nghĩa là đường
+ * Không test nào ở đây mock `/api/agent` cho phần nhập tay — nghĩa là đường
  * ghi điểm không-dùng-giọng-nói chạy độc lập thật.
  */
+
+// Dữ liệu nằm ở server (ADR 13) — mỗi test bắt đầu từ con số không.
+test.beforeEach(async ({ page }) => resetServer(page));
 
 const PLAYERS = ["Nam", "Hùng", "Lan", "Tú"];
 
@@ -116,28 +120,12 @@ test("nhật ký ghi cả ván nói bằng giọng lẫn ván nhập tay", async
   await startSession(page);
 
   // Ván 1 bằng giọng nói.
-  await page.route("**/api/interpret", async (route) => {
-    const body = route.request().postDataJSON() as {
-      context: { players: { id: string; name: string }[] };
-    };
-    const id = (n: string) => body.context.players.find((p) => p.name === n)!.id;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        intent: "record_round",
-        args: {
-          entries: [
-            { player_id: id("Nam"), delta: 4 },
-            { player_id: id("Hùng"), delta: -4 },
-          ],
-        },
-      }),
-    });
+  await scriptAgent(page, {
+    "Nam ăn 4 của Hùng": recordThenSay(record(["Nam", 4], ["Hùng", -4])),
   });
   await say(page, "Nam ăn 4 của Hùng");
   await page.getByRole("button", { name: "Ghi", exact: true }).click();
-  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await expect(page.locator(".proposal")).toBeHidden();
 
   // Sửa nó bằng tay → nhật ký phải phân biệt được nguồn.
   await page.locator(".rounds-table tbody tr").first().locator("td.tap").first().click();

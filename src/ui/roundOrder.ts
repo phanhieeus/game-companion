@@ -19,21 +19,32 @@ function read(): RoundOrder {
   return "newest-last";
 }
 
-export function useRoundOrder(): [RoundOrder, () => void] {
+/**
+ * `set` có mặt để agent đổi thứ tự bảng bằng giọng nói ("cho ván mới lên đầu").
+ * Nút bấm dùng `toggle` vì người bấm không cần biết đang ở chiều nào; agent thì
+ * cần đặt đúng chiều được yêu cầu, không phải lật mù.
+ */
+export function useRoundOrder(): [RoundOrder, () => void, (o: RoundOrder) => void] {
   const [order, setOrder] = useState<RoundOrder>(read);
 
+  const persist = (next: RoundOrder): RoundOrder => {
+    try {
+      localStorage.setItem(ROUND_ORDER_KEY, next);
+    } catch {
+      // Không lưu được thì vẫn đổi trong phiên hiện tại.
+    }
+    return next;
+  };
+
   const toggle = useCallback(() => {
-    setOrder((current) => {
-      const next: RoundOrder =
-        current === "newest-last" ? "newest-first" : "newest-last";
-      try {
-        localStorage.setItem(ROUND_ORDER_KEY, next);
-      } catch {
-        // Không lưu được thì vẫn đổi trong phiên hiện tại.
-      }
-      return next;
-    });
+    setOrder((current) =>
+      persist(current === "newest-last" ? "newest-first" : "newest-last"),
+    );
   }, []);
 
-  return [order, toggle];
+  const set = useCallback((next: RoundOrder) => {
+    setOrder(persist(next));
+  }, []);
+
+  return [order, toggle, set];
 }

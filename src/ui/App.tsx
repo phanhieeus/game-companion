@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { computeScoreboard } from "../domain/scoring";
-import type { Round, Session } from "../domain/types";
-import { LocalStorageSessionRepository } from "../repository/localStorageRepository";
-import { createTools } from "../tools";
+import type { Round, RoundEvent, Scoreboard, Session } from "../../shared/types";
+import * as api from "../api/client";
+import { ApiError, type SessionView } from "../api/client";
 import { useConversation } from "../conversation/useConversation";
 import { isSpeechRecognitionSupported } from "../voice/speech";
 import { RoundsTable } from "./RoundsTable";
@@ -12,41 +11,83 @@ import { RoundHistory } from "./RoundHistory";
 import { ProposalCard } from "./ProposalCard";
 import { SetupScreen } from "./SetupScreen";
 
-const repo = new LocalStorageSessionRepository();
-const tools = createTools(repo);
-
 /** T — trạng thái phải đọc được từ xa, không phải dòng chữ xám bé tí. */
 const STATE_LABEL: Record<string, string> = {
   idle: "",
   listening: "Đang nghe…",
-  understanding: "Đang hiểu…",
-  clarifying: "Đang chờ bạn trả lời",
+  understanding: "Đang nghĩ…",
   confirming: "Kiểm lại rồi bấm Ghi",
-  executing: "Đang ghi…",
 };
 
+const EMPTY_SCOREBOARD: Scoreboard = { rows: [], roundsPlayed: 0 };
+
+/** Câu cuối của một đoạn — phần hỏi, bỏ phần liệt kê số ở trước. */
+function lastSentence(text: string | null): string | null {
+  if (!text) return null;
+  const parts = text.split(/(?<=[.?!])\s+/).filter(Boolean);
+  return parts.at(-1) ?? text;
+}
+
 export function App() {
-  // Mở lại app là tiếp tục phiên đang chơi (câu hỏi mở số 4).
-  const [session, setSession] = useState<Session | null>(
-    () => repo.activeSession() ?? null,
-  );
+  const [session, setSession] = useState<Session | null>(null);
+  const [scoreboard, setScoreboard] = useState<Scoreboard>(EMPTY_SCOREBOARD);
+  // Dữ liệu nằm ở server nên có một khoảnh khắc CHƯA BIẾT — trước đây không có.
+  const [loading, setLoading] = useState(true);
   const [setupError, setSetupError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [roundOrder, toggleRoundOrder] = useRoundOrder();
+  const [roundOrder, toggleRoundOrder, setRoundOrder] = useRoundOrder();
   const [historyRound, setHistoryRound] = useState<Round | null>(null);
+  const [historyEvents, setHistoryEvents] = useState<RoundEvent[]>([]);
+  const [undo, setUndo] = useState<{ undo: string | null; redo: string | null }>({
+    undo: null,
+    redo: null,
+  });
 
-  const refresh = useCallback(() => {
-    if (!session) return;
-    setSession(repo.get(session.id) ?? null);
-  }, [session]);
+  const applyView = useCallback((view: SessionView) => {
+    setSession(view.session);
+    setScoreboard(view.scoreboard);
+  }, []);
+
+  /** Nút hoàn tác phải biết còn gì để làm không — server mới trả lời được. */
+  const refreshUndo = useCallback(async (id: string) => {
+    try {
+      setUndo(await api.undoState(id));
+    } catch {
+      setUndo({ undo: null, redo: null });
+    }
+  }, []);
+
+  // Mở lại app là tiếp tục phiên đang chơi (câu hỏi mở số 4) — hỏi server.
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const { session: found, scoreboard: board } = await api.activeSession();
+        if (!alive) return;
+        setSession(found);
+        setScoreboard(board ?? EMPTY_SCOREBOARD);
+        if (found) void refreshUndo(found.id);
+      } catch (err) {
+        if (alive) setSetupError(err instanceof ApiError ? err.message : null);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [refreshUndo]);
+
+  const onAgentReply = useCallback(
+    (reply: { session: Session; scoreboard: Scoreboard }) => {
+      applyView(reply);
+      void refreshUndo(reply.session.id);
+    },
+    [applyView, refreshUndo],
+  );
 
   const { view, startTurn, endTurn, cancelTurn, confirmByTap, retry } =
-    useConversation(session, tools, refresh);
-
-  const scoreboard = useMemo(
-    () => (session ? computeScoreboard(session) : { rows: [], roundsPlayed: 0 }),
-    [session],
-  );
+    useConversation(session?.id ?? null, onAgentReply, setRoundOrder);
 
   const history = useMemo(
     () =>
@@ -65,75 +106,37 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [cancelTurn]);
 
-  const createSession = (players: string[], meName: string | null) => {
-    const result = tools.create_session({
-      players: players.map((name) => ({ name })),
-      ...(meName ? { me_player_name: meName } : {}),
-    });
-    if (!result.ok) return setSetupError(result.error.message);
-    setSetupError(null);
-    setSession(repo.get(result.data.session_id) ?? null);
-  };
-
-  /** Thêm ván từ bảng — vẫn qua record_round như ván nói bằng giọng (ADR 4). */
-  const addRound = (entries: { playerId: string; delta: number }[]) => {
-    if (!session) return "Không có phiên đang chơi.";
-    const result = tools.record_round({
-      session_id: session.id,
-      entries,
-      client_request_id: `manual-${Date.now()}`,
-      source: "manual",
-    });
-    if (!result.ok) return result.error.message;
-    refresh();
-    return null;
-  };
-
-  /** Sửa ô tại chỗ — update_round tự ghi vào nhật ký (ADR 8). */
-  const saveEdit = (
-    roundId: string,
-    entries: { playerId: string; delta: number }[],
-  ) => {
-    if (!session) return "Không có phiên đang chơi.";
-    const result = tools.update_round({
-      session_id: session.id,
-      round_id: roundId,
-      entries,
-      source: "manual",
-    });
-    if (!result.ok) return result.error.message;
-    refresh();
-    return null;
-  };
-
-  const undoState = useMemo(
-    () =>
-      session
-        ? (tools.get_undo_state({ session_id: session.id }).data ?? {
-            undo: null,
-            redo: null,
-          })
-        : { undo: null, redo: null },
-    [session],
+  /** Mọi thao tác giờ là một chuyến đi mạng — lỗi phải về đúng chỗ gọi. */
+  const run = useCallback(
+    async (action: () => Promise<SessionView>): Promise<string | null> => {
+      try {
+        const next = await action();
+        applyView(next);
+        void refreshUndo(next.session.id);
+        return null;
+      } catch (err) {
+        return err instanceof ApiError ? err.message : "Có lỗi, thử lại nhé.";
+      }
+    },
+    [applyView, refreshUndo],
   );
 
-  const doUndo = () => {
-    if (!session) return;
-    tools.undo_last({ session_id: session.id });
-    refresh();
+  const createSession = async (players: string[], meName: string | null) => {
+    try {
+      applyView(await api.createSession(players, meName));
+      setSetupError(null);
+    } catch (err) {
+      setSetupError(err instanceof ApiError ? err.message : "Không tạo được phiên.");
+    }
   };
 
-  const doRedo = () => {
-    if (!session) return;
-    tools.redo_last({ session_id: session.id });
-    refresh();
-  };
-
-  const undoRound = (roundId: string) => {
-    if (!session) return;
-    tools.undo_round({ session_id: session.id, round_id: roundId });
-    refresh();
-  };
+  if (loading) {
+    return (
+      <div className="app">
+        <div className="loading">Đang mở phiên…</div>
+      </div>
+    );
+  }
 
   if (!session || session.status === "ended") {
     return (
@@ -146,15 +149,8 @@ export function App() {
     );
   }
 
-  /**
-   * Chỉ khoá nút khi máy đang BẬN THẬT (gọi Gemini, đang ghi).
-   *
-   * Trước đây khoá cả `clarifying` và `confirming` — tức là đúng lúc agent hỏi
-   * "6 điểm này ai chung?" thì nút nói bị khoá, người dùng không trả lời được.
-   * Kẹt cứng: phải bấm Hủy hoặc reload mới thoát. Cả hai trạng thái đó đều đang
-   * CHỜ người dùng nói, nên phải để nút dùng được.
-   */
-  const busy = view.state === "understanding" || view.state === "executing";
+  const id = session.id;
+  const busy = view.state === "understanding";
   const canSpeak = isSpeechRecognitionSupported();
   const listening = view.state === "listening";
 
@@ -165,7 +161,9 @@ export function App() {
           <h1>Ghi điểm</h1>
           <div className="meta">
             {scoreboard.roundsPlayed} ván · tổng mỗi ván = 0
-            {view.lastMs !== null && ` · ${view.lastMs}ms`}
+            {/* T — agent nghĩ mấy bước cho câu vừa rồi. Mỗi bước là một lượt
+                gọi Gemini, nên đây cũng là con số cho biết quota đi đâu. */}
+            {view.steps > 1 && ` · ${view.steps} bước`}
           </div>
         </div>
         <button
@@ -184,13 +182,11 @@ export function App() {
             <button
               type="button"
               className="icon-button"
-              onClick={() => {
-                tools.set_confirm_before_commit({
-                  session_id: session.id,
-                  enabled: !session.confirmBeforeCommit,
-                });
-                refresh();
-              }}
+              onClick={() =>
+                void run(() =>
+                  api.setConfirmBeforeCommit(id, !session.confirmBeforeCommit),
+                )
+              }
             >
               {session.confirmBeforeCommit ? "Đang bật" : "Đang tắt"}
             </button>
@@ -198,10 +194,7 @@ export function App() {
           <button
             type="button"
             className="ghost"
-            onClick={() => {
-              tools.end_session({ session_id: session.id });
-              refresh();
-            }}
+            onClick={() => void run(() => api.endSession(id))}
           >
             Kết thúc phiên
           </button>
@@ -215,20 +208,20 @@ export function App() {
             <button
               type="button"
               className="tool-btn"
-              onClick={doUndo}
-              disabled={!undoState.undo}
-              aria-label={undoState.undo ?? "Không còn gì để hoàn tác"}
-              title={undoState.undo ?? "Không còn gì để hoàn tác"}
+              onClick={() => void run(() => api.undoLast(id))}
+              disabled={!undo.undo}
+              aria-label={undo.undo ?? "Không còn gì để hoàn tác"}
+              title={undo.undo ?? "Không còn gì để hoàn tác"}
             >
               ↶
             </button>
             <button
               type="button"
               className="tool-btn"
-              onClick={doRedo}
-              disabled={!undoState.redo}
-              aria-label={undoState.redo ?? "Không còn gì để làm lại"}
-              title={undoState.redo ?? "Không còn gì để làm lại"}
+              onClick={() => void run(() => api.redoLast(id))}
+              disabled={!undo.redo}
+              aria-label={undo.redo ?? "Không còn gì để làm lại"}
+              title={undo.redo ?? "Không còn gì để làm lại"}
             >
               ↷
             </button>
@@ -246,11 +239,20 @@ export function App() {
           session={session}
           rounds={history}
           order={roundOrder}
-          onUndo={undoRound}
           scoreboard={scoreboard}
-          onSaveEdit={saveEdit}
-          onAddRound={addRound}
-          onShowHistory={setHistoryRound}
+          onUndo={(roundId) => void run(() => api.deleteRound(id, roundId))}
+          onSaveEdit={(roundId, entries) =>
+            run(() => api.updateRound(id, roundId, entries))
+          }
+          onAddRound={(entries) => run(() => api.recordRound(id, entries))}
+          onShowHistory={async (round) => {
+            setHistoryRound(round);
+            try {
+              setHistoryEvents((await api.roundEvents(id, round.id)).events);
+            } catch {
+              setHistoryEvents([]);
+            }
+          }}
         />
       </section>
 
@@ -288,19 +290,42 @@ export function App() {
       {/* Thẻ xác nhận nằm TRONG khối dính đáy màn hình cùng nút Voice.
           Để ngoài thì thanh dính đè lên nút Ghi — nút quan trọng nhất bị che. */}
       <div className="voice-area">
-        {view.state === "confirming" && view.proposal && (
-          <ProposalCard
-            rows={view.proposal}
-            title={
-              view.proposal.some((r) => r.delta !== 0) &&
-              view.pendingPrompt?.startsWith("Hủy")
-                ? view.pendingPrompt
-                : "Ghi ván này nhé?"
-            }
-            onAccept={() => confirmByTap(true)}
-            onReject={() => confirmByTap(false)}
-          />
-        )}
+        {view.state === "confirming" &&
+          (view.proposal ? (
+            <ProposalCard
+              rows={view.proposal}
+              /* Câu của tool ("Lan +4, Hùng −1… Ghi ván này nhé?") viết ra để
+                 ĐỌC LÊN — nghe thì cần con số. Trên màn hình thì các dòng bên
+                 dưới đã có đủ, nhắc lại thành chữ chỉ làm rối chỗ cần liếc
+                 nhanh nhất. Lấy đúng câu hỏi ở cuối làm tiêu đề. */
+              title={lastSentence(view.pendingPrompt) ?? "Ghi ván này nhé?"}
+              onAccept={() => void confirmByTap(true)}
+              onReject={() => void confirmByTap(false)}
+            />
+          ) : (
+            /* Tool không có con số nào để vẽ ("kết thúc phiên nhé?") — vẫn phải
+               có hai nút, nếu không thì người dùng kẹt ở trạng thái chờ chốt mà
+               không bấm được gì ngoài nói tiếp. */
+            <div className="proposal" role="group" aria-label="Xác nhận">
+              <div className="proposal-head">{view.pendingPrompt}</div>
+              <div className="confirm-bar">
+                <button
+                  type="button"
+                  className="yes"
+                  onClick={() => void confirmByTap(true)}
+                >
+                  Đồng ý
+                </button>
+                <button
+                  type="button"
+                  className="no"
+                  onClick={() => void confirmByTap(false)}
+                >
+                  Bỏ qua
+                </button>
+              </div>
+            </div>
+          ))}
 
         {view.state !== "confirming" && (
           <span className={`voice-state${listening ? " live" : ""}`}>
@@ -324,7 +349,6 @@ export function App() {
               ? "Nhấn giữ để nói"
               : "Trình duyệt không hỗ trợ giọng nói"}
         </button>
-
       </div>
 
       <BackToTop />
@@ -332,12 +356,7 @@ export function App() {
       {historyRound && (
         <RoundHistory
           sequenceNo={historyRound.sequenceNo}
-          events={
-            tools.get_round_events({
-              session_id: session.id,
-              round_id: historyRound.id,
-            }).data?.events ?? []
-          }
+          events={historyEvents}
           players={session.players}
           onClose={() => setHistoryRound(null)}
         />

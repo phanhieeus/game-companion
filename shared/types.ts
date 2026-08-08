@@ -131,3 +131,54 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   zeroSum: true,
   allowNegative: true,
 };
+
+/* ── Hợp đồng qua dây với agent (ADR 13) ──────────────────────────────── */
+
+/** Một dòng trong thẻ đề xuất: ai, bao nhiêu điểm. */
+export interface ProposalRow {
+  playerId: string;
+  name: string;
+  delta: number;
+}
+
+/** Thứ tự hiện ván trong bảng — tuỳ chọn hiển thị của client (ADR 5). */
+export type RoundOrder = "newest-last" | "newest-first";
+
+/**
+ * Kết quả một lượt nói.
+ *
+ * Client CHỈ nhận được chừng này: không có `ToolCall`, không có tên tool, không
+ * có schema. Lời gọi đang chờ nằm ở server (ADR 13) nên client không có đường
+ * nào tự chạy tool — nó chỉ trả lời có/không.
+ */
+export type AgentOutcome =
+  | { type: "final"; text: string }
+  | { type: "confirm"; prompt: string; rows: ProposalRow[] | null }
+  | { type: "clarify"; question: string }
+  | { type: "error"; message: string; retryable: boolean };
+
+/** Một ô điểm đang gõ dở, trước khi thành `ScoreEntry` thật. */
+export interface DraftEntry {
+  playerId: string;
+  delta: number;
+}
+
+/**
+ * Đọc nhật ký của một ván, chịu được dữ liệu cũ chưa có field `events`.
+ *
+ * Có phiên ghi từ trước khi audit log tồn tại. Đọc thẳng `round.events.map(...)`
+ * sẽ nổ ngay khi mở.
+ */
+export function roundEvents(round: Round): RoundEvent[] {
+  return round.events ?? [];
+}
+
+/**
+ * Có từng bị sửa hoặc hủy chưa — quyết định hiện dấu trên hàng.
+ *
+ * Nằm ở `shared/` vì cả hai phía đều cần: server để dựng nhật ký, client để vẽ
+ * dấu ˟. Thuần tuý đọc dữ liệu đã có sẵn nên không cần thêm một chuyến gọi API.
+ */
+export function wasModified(round: Round): boolean {
+  return roundEvents(round).some((e) => e.kind !== "created");
+}

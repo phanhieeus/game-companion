@@ -1,4 +1,4 @@
-import type { Player, RoundEvent } from "../domain/types";
+import type { Player, RoundEvent } from "../../shared/types";
 
 interface Props {
   sequenceNo: number;

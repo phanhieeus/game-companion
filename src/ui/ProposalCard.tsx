@@ -1,4 +1,4 @@
-import type { ProposalRow } from "../conversation/useConversation";
+import type { ProposalRow } from "../../shared/types";
 
 interface Props {
   rows: ProposalRow[];
