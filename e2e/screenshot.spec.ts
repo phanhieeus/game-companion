@@ -109,4 +109,6 @@ test("C-003/C-004 done-evidence", async ({ page }) => {
   await page.getByRole("button", { name: "Lưu", exact: true }).click();
   await page.getByRole("button", { name: "Lịch sử ván 1" }).click();
   await page.screenshot({ path: "screenshots/11-history.png" });
+  await page.getByRole("button", { name: "Đóng" }).click();
+  await page.screenshot({ path: "screenshots/12-final.png" });
 });

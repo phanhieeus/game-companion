@@ -24,11 +24,16 @@ import type { Result } from "../domain/errors";
 import { err, ok } from "../domain/errors";
 import {
   computeScoreboard,
+  describeAction,
   latestRecordedRound,
+  nextRedoTarget,
   nextSequenceNo,
+  nextUndoTarget,
+  undoDepthOf,
   validatePlayerCount,
   validateRoundEntries,
   type DraftEntry,
+  type TimelineItem,
 } from "../domain/scoring";
 import type { SessionRepository } from "../repository/types";
 
@@ -60,7 +65,12 @@ function appendEvent(
   round: Round,
   kind: RoundEventKind,
   source: RoundSource,
-  parts: { before?: RoundEventEntry[]; after?: RoundEventEntry[] },
+  parts: {
+    before?: RoundEventEntry[];
+    after?: RoundEventEntry[];
+    isUndo?: boolean;
+    isRedo?: boolean;
+  },
 ): void {
   const event: RoundEvent = {
     id: newId("evt"),
@@ -69,9 +79,86 @@ function appendEvent(
     source,
     ...(parts.before ? { before: parts.before } : {}),
     ...(parts.after ? { after: parts.after } : {}),
+    ...(parts.isUndo ? { isUndo: true } : {}),
+    ...(parts.isRedo ? { isRedo: true } : {}),
   };
   // Dữ liệu cũ chưa có mảng events — tạo khi cần.
   round.events = [...(round.events ?? []), event];
+}
+
+/** Gán lại điểm của ván từ một ảnh chụp trong nhật ký. */
+function restoreEntries(round: Round, entries: RoundEventEntry[]): void {
+  round.entries = entries.map((e) => ({
+    id: newId("ent"),
+    roundId: round.id,
+    playerId: e.playerId,
+    delta: e.delta,
+  }));
+}
+
+/** Đảo ngược một thao tác (bấm Hoàn tác). */
+function applyInverse(round: Round, item: TimelineItem): void {
+  const { event } = item;
+  switch (event.kind) {
+    case "created":
+    case "restored":
+      round.status = "voided";
+      appendEvent(round, "voided", event.source, {
+        before: snapshot(round),
+        isUndo: true,
+      });
+      break;
+    case "voided":
+      round.status = "recorded";
+      appendEvent(round, "restored", event.source, {
+        after: snapshot(round),
+        isUndo: true,
+      });
+      break;
+    case "updated": {
+      const before = snapshot(round);
+      if (event.before) restoreEntries(round, event.before);
+      appendEvent(round, "updated", event.source, {
+        before,
+        after: snapshot(round),
+        isUndo: true,
+      });
+      break;
+    }
+  }
+}
+
+/** Làm lại một thao tác đã hoàn tác. */
+function applyForward(round: Round, item: TimelineItem): void {
+  const { event } = item;
+  switch (event.kind) {
+    case "created":
+    case "restored":
+      round.status = "recorded";
+      if (event.after) restoreEntries(round, event.after);
+      appendEvent(round, "restored", event.source, {
+        after: snapshot(round),
+        isRedo: true,
+      });
+      break;
+    case "voided":
+      round.status = "voided";
+      appendEvent(round, "voided", event.source, {
+        before: snapshot(round),
+        isRedo: true,
+      });
+      break;
+    case "updated": {
+      const before = snapshot(round);
+      if (event.after) restoreEntries(round, event.after);
+      appendEvent(round, "updated", event.source, {
+        before,
+        after: snapshot(round),
+        isRedo: true,
+      });
+      break;
+    }
+  }
 }
 
 export interface Tools {
@@ -122,6 +209,24 @@ export interface Tools {
     round_id?: string;
     source?: RoundSource;
   }): Result<{ voided_round_id: string; scoreboard: Scoreboard }>;
+
+  /** Hoàn tác thao tác gần nhất chưa bị hoàn tác. */
+  undo_last(input: { session_id: string }): Result<{
+    label: string;
+    scoreboard: Scoreboard;
+  }>;
+
+  /** Làm lại thao tác vừa bị hoàn tác. */
+  redo_last(input: { session_id: string }): Result<{
+    label: string;
+    scoreboard: Scoreboard;
+  }>;
+
+  /** Nhãn cho hai nút, null nghĩa là nút phải bị vô hiệu hoá. */
+  get_undo_state(input: { session_id: string }): Result<{
+    undo: string | null;
+    redo: string | null;
+  }>;
 
   /** Nhật ký thêm/sửa/xóa của một ván — xem ADR quyết định 8. */
   get_round_events(input: {
@@ -299,6 +404,7 @@ export function createTools(repo: SessionRepository): Tools {
       appendEvent(round, "created", round.source, { after: snapshot(round) });
 
       session.rounds.push(round);
+      session.undoDepth = 0;
       repo.save(session);
       return ok({ round_id: roundId, scoreboard: computeScoreboard(session) });
     },
@@ -332,6 +438,7 @@ export function createTools(repo: SessionRepository): Tools {
         before,
         after: snapshot(round),
       });
+      session.undoDepth = 0;
 
       repo.save(session);
       return ok({ scoreboard: computeScoreboard(session) });
@@ -357,11 +464,67 @@ export function createTools(repo: SessionRepository): Tools {
       const before = snapshot(target);
       target.status = "voided";
       appendEvent(target, "voided", source ?? "manual", { before });
+      session.undoDepth = 0;
 
       repo.save(session);
       return ok({
         voided_round_id: target.id,
         scoreboard: computeScoreboard(session),
+      });
+    },
+
+    undo_last({ session_id }) {
+      const loaded = loadSession(session_id, true);
+      if (!loaded.ok) return loaded as Result<never>;
+      const session = loaded.data;
+
+      const target = nextUndoTarget(session);
+      if (!target) return err("NO_ROUND_TO_UNDO", "Không còn gì để hoàn tác.");
+
+      const round = session.rounds.find((r) => r.id === target.round.id);
+      if (!round) return err("ROUND_NOT_FOUND", "Không tìm thấy ván.");
+
+      applyInverse(round, target);
+      session.undoDepth = undoDepthOf(session) + 1;
+      repo.save(session);
+
+      return ok({
+        label: describeAction("Đã hoàn tác", target),
+        scoreboard: computeScoreboard(session),
+      });
+    },
+
+    redo_last({ session_id }) {
+      const loaded = loadSession(session_id, true);
+      if (!loaded.ok) return loaded as Result<never>;
+      const session = loaded.data;
+
+      const target = nextRedoTarget(session);
+      if (!target) return err("NO_ROUND_TO_UNDO", "Không còn gì để làm lại.");
+
+      const round = session.rounds.find((r) => r.id === target.round.id);
+      if (!round) return err("ROUND_NOT_FOUND", "Không tìm thấy ván.");
+
+      applyForward(round, target);
+      session.undoDepth = Math.max(0, undoDepthOf(session) - 1);
+      repo.save(session);
+
+      return ok({
+        label: describeAction("Đã làm lại", target),
+        scoreboard: computeScoreboard(session),
+      });
+    },
+
+    get_undo_state({ session_id }) {
+      const loaded = loadSession(session_id, false);
+      if (!loaded.ok) return loaded as Result<never>;
+      const session = loaded.data;
+
+      const undo = nextUndoTarget(session);
+      const redo = nextRedoTarget(session);
+      return ok({
+        undo: undo ? describeAction("Hoàn tác", undo) : null,
+        redo: redo ? describeAction("Làm lại", redo) : null,
       });
     },
 

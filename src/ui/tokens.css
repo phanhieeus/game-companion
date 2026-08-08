@@ -1,0 +1,65 @@
+/**
+ * Design tokens.
+ *
+ * Dark-first: nền tối là mặt thiết kế CHÍNH, không phải bản đảo màu của giao
+ * diện sáng. App dùng giữa bàn bài, thường buổi tối, nên nền tối là mặc định
+ * đúng chứ không phải tuỳ chọn.
+ *
+ * Ba tầng nền thay vì một: nền trang → thẻ → phần nổi. Trước đây mọi khối đều
+ * cùng một màu nên nhìn phẳng lì, không phân biệt được cái gì lồng trong cái gì.
+ */
+:root {
+  /* Nền: ba tầng độ cao, chênh nhau đủ để thấy mà không chói */
+  --bg: #0b0b0f;
+  --surface-1: #14141b;
+  --surface-2: #1c1c25;
+  --surface-3: #262632;
+
+  /* Chữ: ba mức, dùng đúng thứ bậc thay vì bôi xám bừa */
+  --text: #f0f0f5;
+  --text-dim: #a0a0b2;
+  --text-faint: #61616f;
+
+  --border: #2a2a36;
+  --border-strong: #3a3a4a;
+
+  /* Màu ngữ nghĩa. Dương/âm là thông tin quan trọng nhất trên màn hình,
+     nên chọn cặp tương phản cao trên nền tối. */
+  --accent: #7c9aff;
+  --accent-dim: #2a3566;
+  --pos: #4ade80;
+  --neg: #fb7185;
+  --warn: #fbbf24;
+
+  /* Nhịp 4px — mọi khoảng cách phải là bội của nó, không có số lẻ tuỳ hứng */
+  --s1: 0.25rem;
+  --s2: 0.5rem;
+  --s3: 0.75rem;
+  --s4: 1rem;
+  --s5: 1.5rem;
+  --s6: 2rem;
+
+  /* Thang chữ, tỉ lệ ~1.2 */
+  --t-xs: 0.6875rem;
+  --t-sm: 0.8125rem;
+  --t-md: 0.9375rem;
+  --t-lg: 1.125rem;
+  --t-xl: 1.375rem;
+  --t-2xl: 1.75rem;
+
+  --r-sm: 0.5rem;
+  --r-md: 0.75rem;
+  --r-lg: 1rem;
+  --r-full: 999px;
+
+  /* Bóng đổ nhẹ, chủ yếu để tách phần nổi khỏi nền */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 -8px 32px rgba(0, 0, 0, 0.55);
+
+  --tap: 2.75rem; /* mục tiêu chạm tối thiểu */
+
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-synthesis-weight: none;
+}

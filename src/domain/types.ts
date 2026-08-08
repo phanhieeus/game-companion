@@ -56,6 +56,15 @@ export interface RoundEvent {
   before?: RoundEventEntry[];
   /** Vắng khi kind = "voided". */
   after?: RoundEventEntry[];
+  /**
+   * Mục này sinh ra do bấm Hoàn tác / Làm lại, không phải thao tác mới.
+   *
+   * Nhật ký bất biến nên undo KHÔNG xoá mục cũ — nó ghi thêm một mục nữa để
+   * vẫn truy được "ai bấm hoàn tác lúc nào". Nhưng những mục này KHÔNG tính vào
+   * chuỗi thao tác mà con trỏ undo đi qua; xem `undoDepth` ở Session.
+   */
+  isUndo?: boolean;
+  isRedo?: boolean;
 }
 
 export interface Round {
@@ -88,6 +97,17 @@ export interface Session {
   mePlayerId?: string;
   /** Xác nhận trước khi ghi. Mặc định bật; tắt được trong cài đặt. */
   confirmBeforeCommit: boolean;
+  /**
+   * Đang lùi bao nhiêu bước so với thao tác mới nhất.
+   *
+   * 0 = đang ở hiện tại. Bấm Hoàn tác thì tăng, Làm lại thì giảm. Một thao tác
+   * MỚI (thêm/sửa/xóa ván) đưa về 0 — đúng như mọi trình soạn thảo: làm việc
+   * mới thì mất nhánh redo.
+   *
+   * Không nằm trong nhật ký vì nhật ký bất biến; đây là con trỏ, không phải
+   * lịch sử. Dữ liệu cũ chưa có field này nên đọc phải chịu được `undefined`.
+   */
+  undoDepth?: number;
 }
 
 export interface ScoreboardRow {

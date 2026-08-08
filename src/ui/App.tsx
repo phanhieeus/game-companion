@@ -106,6 +106,29 @@ export function App() {
     return null;
   };
 
+  const undoState = useMemo(
+    () =>
+      session
+        ? (tools.get_undo_state({ session_id: session.id }).data ?? {
+            undo: null,
+            redo: null,
+          })
+        : { undo: null, redo: null },
+    [session],
+  );
+
+  const doUndo = () => {
+    if (!session) return;
+    tools.undo_last({ session_id: session.id });
+    refresh();
+  };
+
+  const doRedo = () => {
+    if (!session) return;
+    tools.redo_last({ session_id: session.id });
+    refresh();
+  };
+
   const undoRound = (roundId: string) => {
     if (!session) return;
     tools.undo_round({ session_id: session.id, round_id: roundId });
@@ -188,14 +211,36 @@ export function App() {
       <section className="panel">
         <div className="panel-head">
           <h2 className="panel-title">Điểm từng ván</h2>
-          <button
-            type="button"
-            className="order-toggle"
-            onClick={toggleRoundOrder}
-            aria-label="Đổi thứ tự ván"
-          >
-            {roundOrder === "newest-last" ? "Mới nhất ↓" : "Mới nhất ↑"}
-          </button>
+          <div className="panel-tools">
+            <button
+              type="button"
+              className="tool-btn"
+              onClick={doUndo}
+              disabled={!undoState.undo}
+              aria-label={undoState.undo ?? "Không còn gì để hoàn tác"}
+              title={undoState.undo ?? "Không còn gì để hoàn tác"}
+            >
+              ↶
+            </button>
+            <button
+              type="button"
+              className="tool-btn"
+              onClick={doRedo}
+              disabled={!undoState.redo}
+              aria-label={undoState.redo ?? "Không còn gì để làm lại"}
+              title={undoState.redo ?? "Không còn gì để làm lại"}
+            >
+              ↷
+            </button>
+            <button
+              type="button"
+              className="tool-btn wide"
+              onClick={toggleRoundOrder}
+              aria-label="Đổi thứ tự ván"
+            >
+              {roundOrder === "newest-last" ? "Mới ↓" : "Mới ↑"}
+            </button>
+          </div>
         </div>
         <RoundsTable
           session={session}

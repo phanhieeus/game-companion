@@ -375,3 +375,136 @@ describe("nhật ký thay đổi (audit log)", () => {
     expect(updated.ok).toBe(true);
   });
 });
+
+describe("hoàn tác / làm lại", () => {
+  const pair = (ids: string[], d: number) => [
+    { playerId: ids[0]!, delta: d },
+    { playerId: ids[1]!, delta: -d },
+  ];
+
+  it("hoàn tác việc thêm ván thì ván biến mất khỏi bảng điểm", () => {
+    const { tools, sessionId, ids } = setup();
+    tools.record_round({ session_id: sessionId, entries: pair(ids, 3) });
+    expect(tools.get_scoreboard({ session_id: sessionId }).data!.roundsPlayed).toBe(1);
+
+    const undone = tools.undo_last({ session_id: sessionId });
+    expect(undone.ok).toBe(true);
+    expect(undone.data!.label).toContain("thêm ván 1");
+    expect(undone.data!.scoreboard.roundsPlayed).toBe(0);
+  });
+
+  it("làm lại đưa ván trở về", () => {
+    const { tools, sessionId, ids } = setup();
+    tools.record_round({ session_id: sessionId, entries: pair(ids, 3) });
+    tools.undo_last({ session_id: sessionId });
+
+    const redone = tools.redo_last({ session_id: sessionId });
+    expect(redone.ok).toBe(true);
+    expect(redone.data!.scoreboard.roundsPlayed).toBe(1);
+    expect(
+      redone.data!.scoreboard.rows.find((r) => r.playerId === ids[0])?.total,
+    ).toBe(3);
+  });
+
+  it("hoàn tác việc sửa thì điểm quay lại giá trị cũ", () => {
+    const { tools, sessionId, ids } = setup();
+    const rec = tools.record_round({ session_id: sessionId, entries: pair(ids, 3) });
+    tools.update_round({
+      session_id: sessionId,
+      round_id: rec.data!.round_id,
+      entries: pair(ids, 9),
+    });
+    expect(
+      tools.get_scoreboard({ session_id: sessionId }).data!.rows.find(
+        (r) => r.playerId === ids[0],
+      )?.total,
+    ).toBe(9);
+
+    const undone = tools.undo_last({ session_id: sessionId });
+    expect(
+      undone.data!.scoreboard.rows.find((r) => r.playerId === ids[0])?.total,
+    ).toBe(3);
+  });
+
+  it("lùi nhiều bước rồi tiến lại nhiều bước", () => {
+    const { tools, sessionId, ids } = setup();
+    for (const d of [1, 2, 3]) {
+      tools.record_round({ session_id: sessionId, entries: pair(ids, d) });
+    }
+    expect(tools.get_scoreboard({ session_id: sessionId }).data!.roundsPlayed).toBe(3);
+
+    tools.undo_last({ session_id: sessionId });
+    tools.undo_last({ session_id: sessionId });
+    expect(tools.get_scoreboard({ session_id: sessionId }).data!.roundsPlayed).toBe(1);
+
+    tools.redo_last({ session_id: sessionId });
+    tools.redo_last({ session_id: sessionId });
+    expect(tools.get_scoreboard({ session_id: sessionId }).data!.roundsPlayed).toBe(3);
+  });
+
+  it("hoàn tác nhiều lần không tự hoàn tác chính nó", () => {
+    const { tools, sessionId, ids } = setup();
+    tools.record_round({ session_id: sessionId, entries: pair(ids, 1) });
+    tools.record_round({ session_id: sessionId, entries: pair(ids, 2) });
+
+    tools.undo_last({ session_id: sessionId });
+    tools.undo_last({ session_id: sessionId });
+    // Đã lùi hết hai thao tác — không được quay ngược thành redo.
+    expect(tools.get_scoreboard({ session_id: sessionId }).data!.roundsPlayed).toBe(0);
+    expect(tools.undo_last({ session_id: sessionId }).error?.code).toBe(
+      "NO_ROUND_TO_UNDO",
+    );
+  });
+
+  /** Giống mọi trình soạn thảo: làm việc mới thì mất nhánh redo. */
+  it("thao tác mới sau khi hoàn tác thì bỏ nhánh làm lại", () => {
+    const { tools, sessionId, ids } = setup();
+    tools.record_round({ session_id: sessionId, entries: pair(ids, 1) });
+    tools.undo_last({ session_id: sessionId });
+    expect(tools.get_undo_state({ session_id: sessionId }).data!.redo).not.toBeNull();
+
+    tools.record_round({ session_id: sessionId, entries: pair(ids, 7) });
+    expect(tools.get_undo_state({ session_id: sessionId }).data!.redo).toBeNull();
+  });
+
+  it("get_undo_state trả nhãn có nghĩa, null khi không dùng được", () => {
+    const { tools, sessionId, ids } = setup();
+    let state = tools.get_undo_state({ session_id: sessionId }).data!;
+    expect(state.undo).toBeNull();
+    expect(state.redo).toBeNull();
+
+    tools.record_round({ session_id: sessionId, entries: pair(ids, 4) });
+    state = tools.get_undo_state({ session_id: sessionId }).data!;
+    expect(state.undo).toBe("Hoàn tác thêm ván 1");
+    expect(state.redo).toBeNull();
+
+    tools.undo_last({ session_id: sessionId });
+    state = tools.get_undo_state({ session_id: sessionId }).data!;
+    expect(state.redo).toBe("Làm lại thêm ván 1");
+  });
+
+  it("hoàn tác việc xóa thì ván sống lại", () => {
+    const { tools, sessionId, ids } = setup();
+    const rec = tools.record_round({ session_id: sessionId, entries: pair(ids, 5) });
+    tools.undo_round({ session_id: sessionId, round_id: rec.data!.round_id });
+    expect(tools.get_scoreboard({ session_id: sessionId }).data!.roundsPlayed).toBe(0);
+
+    const undone = tools.undo_last({ session_id: sessionId });
+    expect(undone.data!.label).toContain("xóa ván 1");
+    expect(undone.data!.scoreboard.roundsPlayed).toBe(1);
+  });
+
+  it("nhật ký vẫn ghi lại cả lần hoàn tác", () => {
+    const { tools, sessionId, ids } = setup();
+    const rec = tools.record_round({ session_id: sessionId, entries: pair(ids, 2) });
+    tools.undo_last({ session_id: sessionId });
+
+    const events = tools.get_round_events({
+      session_id: sessionId,
+      round_id: rec.data!.round_id,
+    }).data!.events;
+
+    expect(events).toHaveLength(2);
+    expect(events[1]!.isUndo).toBe(true);
+  });
+});

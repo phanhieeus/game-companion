@@ -1,18 +1,4 @@
-:root {
-  --bg: #101015;
-  --surface: #1a1a22;
-  --surface-2: #24242f;
-  --text: #f4f4f8;
-  --muted: #8f8fa3;
-  --accent: #6c8cff;
-  --positive: #4ade80;
-  --negative: #fb7185;
-  --warn: #fbbf24;
-  --border: #2e2e3a;
-
-  color-scheme: dark;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
+@import "./tokens.css";
 
 * {
   box-sizing: border-box;
@@ -24,7 +10,10 @@ body {
   background: var(--bg);
   color: var(--text);
   min-height: 100dvh;
+  font-size: var(--t-md);
+  line-height: 1.5;
   -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 button {
@@ -35,132 +24,11 @@ button {
   background: none;
 }
 
-.app {
-  max-width: 34rem;
-  margin: 0 auto;
-  min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  padding: 0.9rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom));
-  gap: 0.9rem;
-}
+button:disabled { cursor: not-allowed; }
 
-/* ---------- header ---------- */
-
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.header h1 {
-  font-size: 1.1rem;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-}
-
-.header .meta {
-  color: var(--muted);
-  font-size: 0.78rem;
-  margin-top: 0.1rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.icon-button {
-  padding: 0.55rem 0.85rem;
-  border-radius: 0.65rem;
-  background: var(--surface-2);
-  font-size: 0.85rem;
-}
-
-.settings {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.settings-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.8rem 1rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
-  font-size: 0.9rem;
-}
-
-/* ---------- scoreboard ---------- */
-
-.scoreboard {
-  background: var(--surface);
-  border-radius: 1rem;
-  overflow: hidden;
-  border: 1px solid var(--border);
-}
-
-.row {
-  display: grid;
-  grid-template-columns: 1.6rem 1fr auto;
-  align-items: center;
-  gap: 0.7rem;
-  padding: 0.8rem 1rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.scoreboard.no-rank .row { grid-template-columns: 1fr auto; }
-
-.row:last-child { border-bottom: none; }
-
-.row .rank {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  font-size: 0.85rem;
-}
-
-.row .name {
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.row .name .me {
-  color: var(--muted);
-  font-weight: 400;
-  font-size: 0.78rem;
-}
-
-.row .total {
-  font-variant-numeric: tabular-nums;
-  font-size: 1.45rem;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-}
-
-.row .total.pos { color: var(--positive); }
-.row .total.neg { color: var(--negative); }
-.row.leader { background: rgba(108, 140, 255, 0.09); }
-
-/* ---------- rounds table ---------- */
-
-.panel { display: flex; flex-direction: column; gap: 0.45rem; }
-
-.panel-title {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding-left: 0.15rem;
-}
-
-.history-empty {
-  color: var(--muted);
-  font-size: 0.85rem;
-  padding-left: 0.15rem;
+:where(button, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .sr-only {
@@ -172,18 +40,135 @@ button {
   white-space: nowrap;
 }
 
-.rounds-table {
-  background: var(--surface);
+.app {
+  max-width: 32rem;
+  margin: 0 auto;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: var(--s3) var(--s3) calc(var(--s3) + env(safe-area-inset-bottom));
+  gap: var(--s3);
+}
+
+/* ══════════ header ══════════ */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding-block: var(--s1);
+}
+
+.header h1 {
+  font-size: var(--t-lg);
+  font-weight: 640;
+  letter-spacing: -0.015em;
+}
+
+.header .meta {
+  color: var(--text-faint);
+  font-size: var(--t-xs);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.icon-button {
+  min-height: var(--tap);
+  padding-inline: var(--s3);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-size: var(--t-sm);
+  font-weight: 550;
+  transition: background 0.12s ease;
+}
+
+.icon-button:active { background: var(--surface-3); }
+
+.settings { display: flex; flex-direction: column; gap: var(--s2); }
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s2) var(--s3);
+  background: var(--surface-1);
   border: 1px solid var(--border);
-  border-radius: 0.85rem;
+  border-radius: var(--r-md);
+  font-size: var(--t-sm);
+}
+
+/* ══════════ panel head ══════════ */
+
+.panel { display: flex; flex-direction: column; gap: var(--s2); }
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  padding-left: var(--s1);
+}
+
+.panel-title {
+  font-size: var(--t-xs);
+  font-weight: 650;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.panel-tools { display: flex; gap: var(--s1); }
+
+.tool-btn {
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-size: var(--t-md);
+  line-height: 1;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.tool-btn.wide {
+  min-width: auto;
+  padding-inline: var(--s2);
+  font-size: var(--t-xs);
+  font-weight: 650;
+}
+
+.tool-btn:active:not(:disabled) { background: var(--accent-dim); color: var(--text); }
+
+/* Nút mờ hẳn khi không dùng được — đừng để người ta bấm vào chỗ chết. */
+.tool-btn:disabled { opacity: 0.32; }
+
+/* ══════════ rounds table ══════════ */
+
+.history-empty {
+  color: var(--text-faint);
+  font-size: var(--t-sm);
+  padding: var(--s4) var(--s3);
+  text-align: center;
+}
+
+.rounds-table {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
   overflow: hidden;
+  box-shadow: var(--shadow-1);
 }
 
 .rounds-table table {
   width: 100%;
   border-collapse: collapse;
-  /* fixed = cột chia đều theo width đặt sẵn, không giãn theo nội dung.
-     Đây là thứ giữ cho 6 cột vừa 360px mà không cuộn ngang. */
+  /* fixed = cột chia theo width đặt sẵn, không giãn theo nội dung.
+     Đây là thứ giữ 7 cột vừa 360px mà không cuộn ngang. */
   table-layout: fixed;
   font-variant-numeric: tabular-nums;
 }
@@ -191,380 +176,113 @@ button {
 .rounds-table th,
 .rounds-table td {
   text-align: right;
-  padding: 0.42rem 0.3rem;
-  font-size: 0.9rem;
+  padding: var(--s2) var(--s1);
+  font-size: var(--t-sm);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Càng đông người càng phải co chữ — 5 người là 7 cột kể cả Ván và nút hủy. */
-.rounds-table.cols-4 th, .rounds-table.cols-4 td { font-size: 0.88rem; }
-.rounds-table.cols-5 th, .rounds-table.cols-5 td { font-size: 0.78rem; padding-inline: 0.2rem; }
+/* Càng đông người càng co chữ — 5 người là 7 cột kể cả Ván và nút xóa. */
+.rounds-table.cols-5 th,
+.rounds-table.cols-5 td { font-size: var(--t-xs); padding-inline: 2px; }
 
 .rounds-table thead th {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 600;
-  padding-top: 0.6rem;
-  padding-bottom: 0.45rem;
+  color: var(--text-dim);
+  font-size: var(--t-xs);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  padding-block: var(--s2);
+  background: var(--surface-2);
   border-bottom: 1px solid var(--border);
 }
 
 .rounds-table .c-seq {
-  width: 2.1rem;
+  width: 2.4rem;
   text-align: left;
-  padding-left: 0.7rem;
-  color: var(--muted);
+  padding-left: var(--s3);
+  color: var(--text-faint);
   font-weight: 500;
 }
 
-.rounds-table .c-act { width: 1.9rem; text-align: center; padding-inline: 0; }
+.rounds-table .c-act { width: 2rem; text-align: center; padding-inline: 0; }
 
 .rounds-table .c-act button {
-  color: var(--muted);
-  font-size: 1rem;
+  width: 100%;
+  min-height: 2rem;
+  color: var(--text-faint);
+  font-size: var(--t-md);
   line-height: 1;
-  padding: 0.3rem 0.4rem;
-  border-radius: 0.35rem;
+  border-radius: var(--r-sm);
+  transition: color 0.12s ease, background 0.12s ease;
 }
 
-.rounds-table .c-act button:active { background: var(--negative); color: #2a0710; }
+.rounds-table .c-act button:active { background: var(--neg); color: #2a0710; }
 
-.rounds-table tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.022); }
+/* Vạch kẻ nhạt giữa các hàng — dễ dò ngang hơn sọc nền. */
+.rounds-table tbody tr + tr td,
+.rounds-table tbody tr + tr th { border-top: 1px solid rgba(255, 255, 255, 0.04); }
 
-.rounds-table td.pos { color: var(--positive); }
-.rounds-table td.neg { color: var(--negative); }
-.rounds-table td.empty { color: #4a4a58; }
+.rounds-table td.pos { color: var(--pos); }
+.rounds-table td.neg { color: var(--neg); }
+.rounds-table td.empty { color: var(--text-faint); opacity: 0.5; }
 
+.rounds-table td.tap { cursor: pointer; transition: background 0.1s ease; }
+.rounds-table td.tap:active { background: var(--accent-dim); }
+
+.rounds-table thead th .me { color: var(--accent); font-weight: 700; }
+.rounds-table .leader-col { color: var(--accent); }
+
+/* Hàng tổng nổi hẳn lên — đây là con số người ta liếc nhiều nhất. */
 .rounds-table tfoot td,
 .rounds-table tfoot th {
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-strong);
+  background: var(--surface-2);
   font-weight: 700;
-  padding-top: 0.5rem;
-  padding-bottom: 0.55rem;
-  background: rgba(108, 140, 255, 0.06);
+  font-size: var(--t-sm);
+  padding-block: var(--s2);
 }
 
-/* ---------- transcript ---------- */
+.rounds-table.cols-5 tfoot td { font-size: var(--t-xs); }
+.rounds-table tfoot td.pos { color: var(--pos); }
+.rounds-table tfoot td.neg { color: var(--neg); }
 
-.transcript {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.9rem;
-  padding: 0.85rem 1rem;
-  min-height: 4rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  font-size: 0.95rem;
-}
-
-.transcript .hint { color: var(--muted); line-height: 1.5; font-size: 0.88rem; }
-.transcript .you { color: var(--muted); }
-
-/* Đang nghe thì chữ sáng lên, để biết máy vẫn đang bắt được tiếng. */
-.transcript .you.live { color: var(--text); }
-
-.transcript .agent { line-height: 1.5; }
-.transcript .error { color: var(--negative); line-height: 1.5; }
-
-.retry {
-  align-self: flex-start;
-  padding: 0.5rem 0.8rem;
-  border-radius: 0.6rem;
-  background: var(--surface-2);
-  font-size: 0.85rem;
-  font-weight: 500;
-}
-
-/* ---------- proposal (the commit gate) ---------- */
-
-.proposal {
-  background: var(--surface);
-  border: 1px solid var(--accent);
-  border-radius: 1rem;
-  padding: 0.9rem 1rem 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-  box-shadow: 0 0 0 3px rgba(108, 140, 255, 0.12);
-}
-
-.proposal-head { font-size: 0.9rem; line-height: 1.45; }
-
-.proposal-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-}
-
-.proposal-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.4rem 0;
-  border-bottom: 1px dashed var(--border);
-}
-
-.proposal-row:last-child { border-bottom: none; }
-
-.pname { font-size: 0.95rem; }
-
-.pdelta {
-  font-size: 1.3rem;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-}
-
-.pdelta.pos { color: var(--positive); }
-.pdelta.neg { color: var(--negative); }
-
-.proposal-sum {
-  font-size: 0.8rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.proposal-sum.ok { color: var(--muted); }
-.proposal-sum.bad { color: var(--warn); font-weight: 600; }
-
-.confirm-bar {
-  display: grid;
-  grid-template-columns: 1.4fr 1fr;
-  gap: 0.55rem;
-}
-
-.confirm-bar button {
-  padding: 0.95rem;
-  border-radius: 0.8rem;
-  font-weight: 650;
-}
-
-.confirm-bar .yes { background: var(--positive); color: #06240f; }
-.confirm-bar .no { background: var(--surface-2); }
-
-/* ---------- voice ---------- */
-
-.spacer { flex: 1; min-height: 0.25rem; }
-
-/* Khối dính đáy: thẻ xác nhận + trạng thái + nút Voice, xếp chồng, không đè. */
-.voice-area {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.55rem;
-  position: sticky;
-  bottom: 0;
-  padding-top: 0.6rem;
-  background: linear-gradient(to bottom, transparent, var(--bg) 22%);
-}
-
-.voice-state {
-  color: var(--muted);
-  font-size: 0.83rem;
-  min-height: 1.15rem;
-  text-align: center;
-}
-
-.voice-state.live { color: var(--accent); font-weight: 600; }
-
-.voice-button {
-  width: 100%;
-  padding: 1.35rem;
-  border-radius: 1.1rem;
-  background: var(--accent);
-  color: #0b0b12;
-  font-size: 1.05rem;
-  font-weight: 650;
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-  transition: transform 0.08s ease, background 0.15s ease;
-}
-
-.voice-button:active,
-.voice-button.active {
-  transform: scale(0.985);
-  background: #9db1ff;
-}
-
-/* Nhịp đập khi đang nghe — tín hiệu duy nhất nhìn thấy được từ xa. */
-.voice-button.active { animation: listening 1.4s ease-in-out infinite; }
-
-@keyframes listening {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(108, 140, 255, 0.45); }
-  50% { box-shadow: 0 0 0 0.7rem rgba(108, 140, 255, 0); }
-}
-
-.voice-button:disabled {
-  background: var(--surface-2);
-  color: var(--muted);
-  cursor: not-allowed;
-  animation: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .voice-button.active { animation: none; }
-}
-
-/* ---------- setup ---------- */
-
-.setup {
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-  padding-top: 1.5rem;
-}
-
-.setup h2 { font-size: 1.25rem; }
-.setup p { color: var(--muted); font-size: 0.88rem; line-height: 1.55; }
-
-.ended-banner {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
-  padding: 0.8rem 1rem;
-  color: var(--muted);
-  font-size: 0.88rem;
-}
-
-.player-input { display: flex; gap: 0.45rem; align-items: center; }
-
-.player-input input {
-  flex: 1;
-  min-width: 0;
-  padding: 0.85rem 1rem;
-  border-radius: 0.7rem;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-}
-
-.player-input input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
-}
-
-.player-input .remove {
-  padding: 0.5rem 0.65rem;
-  color: var(--muted);
-  border-radius: 0.5rem;
-  font-size: 0.85rem;
-  white-space: nowrap;
-}
-
-.player-input .remove[aria-pressed="true"] { color: var(--accent); }
-
-.primary {
-  padding: 1rem;
-  border-radius: 0.85rem;
-  background: var(--accent);
-  color: #0b0b12;
-  font-weight: 650;
-  width: 100%;
-}
-
-.primary:disabled { background: var(--surface-2); color: var(--muted); }
-
-.ghost {
-  padding: 0.8rem;
-  border-radius: 0.7rem;
-  background: var(--surface-2);
-  width: 100%;
-}
-
-.warning {
-  background: rgba(251, 113, 133, 0.1);
-  border: 1px solid rgba(251, 113, 133, 0.3);
-  color: #fda4af;
-  padding: 0.85rem 1rem;
-  border-radius: 0.75rem;
-  font-size: 0.86rem;
-  line-height: 1.55;
-}
-
-.warning code {
-  background: rgba(0, 0, 0, 0.3);
-  padding: 0.1rem 0.3rem;
-  border-radius: 0.25rem;
-  font-size: 0.9em;
-  word-break: break-all;
-}
-
-@media (min-width: 30rem) {
-  .app { padding: 1.4rem; }
-}
-
-/* ---------- panel head + back to top (C-002) ---------- */
-
-.panel-head {
+/* Ván từng bị sửa: cả ô số ván là nút, đủ to để bấm bằng ngón tay. */
+.rounds-table .seq-button {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  gap: 2px;
+  width: 100%;
+  min-height: 1.9rem;
+  color: inherit;
+  font: inherit;
+  text-align: left;
 }
 
-.order-toggle {
-  padding: 0.32rem 0.6rem;
-  border-radius: 0.5rem;
-  background: var(--surface-2);
-  color: var(--muted);
-  font-size: 0.74rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
+.rounds-table .seq-button:active { color: var(--warn); }
+.ev-dot { color: var(--warn); font-size: var(--t-sm); line-height: 1; }
 
-.back-to-top {
-  position: fixed;
-  right: 0.9rem;
-  bottom: calc(6.2rem + env(safe-area-inset-bottom));
-  width: 2.6rem;
-  height: 2.6rem;
-  border-radius: 50%;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  font-size: 1.1rem;
-  line-height: 1;
-  z-index: 5;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
-}
+/* ══════════ inline edit ══════════ */
 
-/* ---------- compact scoreboard (C-003) ---------- */
-
-/* Mật độ, không phải cắt dữ liệu: vẫn đủ hạng + tên + "tôi" + điểm. */
-.scoreboard.compact .row { padding: 0.42rem 0.8rem; gap: 0.55rem; }
-.scoreboard.compact .row .total { font-size: 1.05rem; }
-.scoreboard.compact .row .name { font-size: 0.9rem; }
-.scoreboard.compact .row .rank { font-size: 0.76rem; }
-.scoreboard.compact { border-radius: 0.85rem; }
-
-/* ---------- inline edit + add row ---------- */
-
-.rounds-table td.tap { cursor: pointer; }
-.rounds-table td.tap:active { background: rgba(108, 140, 255, 0.16); }
-
-.rounds-table tr.editing { background: rgba(108, 140, 255, 0.1); }
-
-.rounds-table tr.editing td { padding: 0.25rem 0.15rem; }
+.rounds-table tr.editing { background: var(--accent-dim); }
+.rounds-table tr.editing td { padding: var(--s1) 2px; }
 
 .rounds-table tr.editing input {
   width: 100%;
   min-width: 0;
-  padding: 0.4rem 0.25rem;
-  border-radius: 0.4rem;
-  border: 1px solid var(--border);
+  min-height: 2rem;
+  padding: var(--s1);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-strong);
   background: var(--bg);
   color: var(--text);
   font: inherit;
   font-size: inherit;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   text-align: right;
-  /* Bỏ mũi tên tăng/giảm: chật chỗ và không ai bấm trên điện thoại. */
+  /* Bỏ mũi tên tăng/giảm: chật chỗ, không ai bấm trên điện thoại. */
   appearance: textfield;
   -moz-appearance: textfield;
 }
@@ -575,129 +293,375 @@ button {
   margin: 0;
 }
 
-.rounds-table tr.editing input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
-}
-
 .edit-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.6rem;
-  padding: 0.55rem 0.7rem;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
   border-top: 1px solid var(--border);
   background: var(--surface-2);
 }
 
-.edit-sum { font-size: 0.76rem; font-variant-numeric: tabular-nums; }
-.edit-sum.ok { color: var(--positive); }
+.edit-sum { font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
+.edit-sum.ok { color: var(--pos); font-weight: 600; }
 .edit-sum.bad { color: var(--warn); font-weight: 600; }
 
-.edit-actions { display: flex; gap: 0.4rem; }
+.edit-actions { display: flex; gap: var(--s1); }
 
 .edit-actions button {
-  padding: 0.42rem 0.85rem;
-  border-radius: 0.5rem;
-  font-size: 0.82rem;
-  font-weight: 600;
+  min-height: 2.25rem;
+  padding-inline: var(--s3);
+  border-radius: var(--r-sm);
+  font-size: var(--t-sm);
+  font-weight: 650;
 }
 
-.edit-actions .save { background: var(--positive); color: #06240f; }
-.edit-actions .save:disabled { background: var(--surface); color: var(--muted); }
-.edit-actions .cancel { background: var(--surface); color: var(--muted); }
+.edit-actions .save { background: var(--pos); color: #06240f; }
+.edit-actions .save:disabled { background: var(--surface-3); color: var(--text-faint); }
+.edit-actions .cancel { background: var(--surface-3); color: var(--text-dim); }
 
 .add-row {
   width: 100%;
-  padding: 0.6rem;
+  min-height: var(--tap);
   border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 0.84rem;
-  font-weight: 500;
+  color: var(--text-dim);
+  font-size: var(--t-sm);
+  font-weight: 550;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
-.add-row:active { background: var(--surface-2); }
+.add-row:active { background: var(--surface-2); color: var(--text); }
 
-/* Ván từng bị sửa: cả ô số ván là nút, đủ to để bấm bằng ngón tay. */
-.rounds-table .seq-button {
+/* ══════════ transcript ══════════ */
+
+.transcript {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--s3);
+  min-height: 3.5rem;
   display: flex;
-  align-items: center;
-  gap: 0.1rem;
+  flex-direction: column;
+  gap: var(--s2);
+  font-size: var(--t-sm);
+}
+
+.transcript .hint { color: var(--text-faint); line-height: 1.55; }
+.transcript .you { color: var(--text-dim); }
+/* Đang nghe thì chữ sáng lên — tín hiệu máy vẫn bắt được tiếng. */
+.transcript .you.live { color: var(--text); font-weight: 500; }
+.transcript .agent { line-height: 1.55; }
+.transcript .error { color: var(--neg); line-height: 1.55; }
+
+.retry {
+  align-self: flex-start;
+  min-height: 2.25rem;
+  padding-inline: var(--s3);
+  border-radius: var(--r-sm);
+  background: var(--surface-3);
+  font-size: var(--t-sm);
+  font-weight: 550;
+}
+
+/* ══════════ proposal — cổng chốt trước khi ghi ══════════ */
+
+.proposal {
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-lg);
+  padding: var(--s3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  box-shadow: var(--shadow-2), 0 0 0 3px rgba(124, 154, 255, 0.1);
+}
+
+.proposal-head { font-size: var(--t-sm); color: var(--text-dim); }
+
+.proposal-rows { display: flex; flex-direction: column; }
+
+.proposal-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding-block: var(--s1);
+}
+
+.proposal-row + .proposal-row { border-top: 1px solid var(--border); }
+
+.pname { font-size: var(--t-md); }
+
+.pdelta {
+  font-size: var(--t-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.pdelta.pos { color: var(--pos); }
+.pdelta.neg { color: var(--neg); }
+
+.proposal-sum { font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
+.proposal-sum.ok { color: var(--text-faint); }
+.proposal-sum.bad { color: var(--warn); font-weight: 650; }
+
+.confirm-bar {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: var(--s2);
+  margin-top: var(--s1);
+}
+
+.confirm-bar button {
+  min-height: var(--tap);
+  border-radius: var(--r-md);
+  font-weight: 680;
+  font-size: var(--t-md);
+}
+
+.confirm-bar .yes { background: var(--pos); color: #06240f; }
+.confirm-bar .no { background: var(--surface-3); color: var(--text-dim); }
+
+/* ══════════ voice ══════════ */
+
+.spacer { flex: 1; min-height: var(--s2); }
+
+.voice-area {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  position: sticky;
+  bottom: 0;
+  /* Vệt mờ phải NGẮN và dứt khoát. Trước đây nó trải dài 20% chiều cao khối
+     nên phủ mờ luôn hàng Σ ở đáy bảng — đúng con số người ta liếc nhiều nhất
+     lại bị làm nhạt. Giờ chỉ mờ đúng một dải hẹp ngay trên nút. */
+  padding-top: var(--s2);
+  background: linear-gradient(to bottom, transparent, var(--bg) 0.75rem);
+}
+
+.voice-state {
+  color: var(--text-faint);
+  font-size: var(--t-xs);
+  min-height: 1rem;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+.voice-state.live { color: var(--accent); font-weight: 650; }
+
+.voice-button {
   width: 100%;
-  min-height: 1.9rem;
-  padding: 0;
-  color: inherit;
-  font: inherit;
-  text-align: left;
+  min-height: 3.5rem;
+  border-radius: var(--r-lg);
+  background: var(--accent);
+  color: #08080e;
+  font-size: var(--t-md);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  box-shadow: var(--shadow-2);
+  transition: transform 0.08s ease, background 0.15s ease;
 }
 
-.rounds-table .seq-button:active { color: var(--warn); }
+.voice-button:active,
+.voice-button.active { transform: scale(0.985); background: #9db1ff; }
 
-.ev-dot {
-  color: var(--warn);
-  font-size: 0.85rem;
+/* Nhịp đập khi đang nghe — tín hiệu duy nhất nhìn được từ xa. */
+.voice-button.active { animation: listening 1.4s ease-in-out infinite; }
+
+@keyframes listening {
+  0%, 100% { box-shadow: var(--shadow-2), 0 0 0 0 rgba(124, 154, 255, 0.45); }
+  50% { box-shadow: var(--shadow-2), 0 0 0 0.75rem rgba(124, 154, 255, 0); }
+}
+
+.voice-button:disabled {
+  background: var(--surface-2);
+  color: var(--text-faint);
+  box-shadow: none;
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-button.active { animation: none; }
+  * { transition-duration: 0.01ms !important; }
+}
+
+.back-to-top {
+  position: fixed;
+  right: var(--s3);
+  bottom: calc(6rem + env(safe-area-inset-bottom));
+  width: var(--tap);
+  height: var(--tap);
+  border-radius: var(--r-full);
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  font-size: var(--t-lg);
   line-height: 1;
+  z-index: 5;
+  box-shadow: var(--shadow-2);
 }
 
-/* ---------- round history sheet ---------- */
+/* ══════════ history sheet ══════════ */
 
 .sheet-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.62);
+  background: rgba(0, 0, 0, 0.66);
   display: flex;
   align-items: flex-end;
   justify-content: center;
   z-index: 20;
+  animation: fade 0.14s ease;
 }
+
+@keyframes fade { from { opacity: 0; } }
 
 .sheet {
   width: 100%;
-  max-width: 34rem;
-  max-height: 78dvh;
+  max-width: 32rem;
+  max-height: 76dvh;
   overflow-y: auto;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 1rem 1rem 0 0;
-  padding: 0.9rem 1rem calc(1.1rem + env(safe-area-inset-bottom));
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-bottom: none;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  padding: var(--s3) var(--s3) calc(var(--s4) + env(safe-area-inset-bottom));
+  box-shadow: var(--shadow-3);
+  animation: rise 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+
+@keyframes rise { from { transform: translateY(12%); } }
 
 .sheet-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
+  gap: var(--s3);
+  margin-bottom: var(--s3);
 }
 
-.sheet-empty { color: var(--muted); font-size: 0.88rem; line-height: 1.5; }
+.sheet-head strong { font-size: var(--t-md); font-weight: 650; }
+.sheet-empty { color: var(--text-dim); font-size: var(--t-sm); line-height: 1.6; }
 
-.sheet-list { list-style: none; display: flex; flex-direction: column; gap: 0.7rem; }
+.sheet-list { list-style: none; display: flex; flex-direction: column; gap: var(--s3); }
 
 .sheet-list li {
-  border-left: 2px solid var(--border);
-  padding-left: 0.7rem;
+  border-left: 2px solid var(--border-strong);
+  padding-left: var(--s3);
 }
 
-.ev-head { display: flex; align-items: baseline; gap: 0.5rem; }
-
-.ev-kind { font-size: 0.85rem; font-weight: 600; }
-.ev-kind.k-created { color: var(--positive); }
+.ev-head { display: flex; align-items: baseline; gap: var(--s2); }
+.ev-kind { font-size: var(--t-sm); font-weight: 650; }
+.ev-kind.k-created { color: var(--pos); }
 .ev-kind.k-updated { color: var(--warn); }
-.ev-kind.k-voided { color: var(--negative); }
+.ev-kind.k-voided { color: var(--neg); }
 .ev-kind.k-restored { color: var(--accent); }
-
-.ev-meta { color: var(--muted); font-size: 0.74rem; }
+.ev-meta { color: var(--text-faint); font-size: var(--t-xs); }
 
 .ev-changes {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 0.7rem;
-  margin-top: 0.25rem;
-  font-size: 0.82rem;
-  color: var(--muted);
+  gap: var(--s1) var(--s3);
+  margin-top: var(--s1);
+  font-size: var(--t-sm);
+  color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
 
-.ev-change s { color: var(--negative); opacity: 0.8; }
-.ev-change b { color: var(--positive); }
+.ev-change s { color: var(--neg); opacity: 0.75; }
+.ev-change b { color: var(--pos); }
+
+/* ══════════ setup ══════════ */
+
+.setup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding-top: var(--s5);
+}
+
+.setup h2 { font-size: var(--t-xl); font-weight: 650; letter-spacing: -0.02em; }
+.setup p { color: var(--text-dim); font-size: var(--t-sm); line-height: 1.6; }
+
+.ended-banner {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--s3);
+  color: var(--text-dim);
+  font-size: var(--t-sm);
+}
+
+.player-input { display: flex; gap: var(--s2); align-items: center; }
+
+.player-input input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--tap);
+  padding-inline: var(--s3);
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text);
+  font: inherit;
+}
+
+.player-input .remove {
+  min-width: var(--tap);
+  min-height: var(--tap);
+  padding-inline: var(--s2);
+  color: var(--text-faint);
+  border-radius: var(--r-sm);
+  font-size: var(--t-sm);
+  white-space: nowrap;
+}
+
+.player-input .remove[aria-pressed="true"] { color: var(--accent); }
+
+.primary {
+  min-height: 3rem;
+  border-radius: var(--r-md);
+  background: var(--accent);
+  color: #08080e;
+  font-weight: 700;
+  width: 100%;
+  box-shadow: var(--shadow-1);
+}
+
+.primary:disabled { background: var(--surface-2); color: var(--text-faint); box-shadow: none; }
+
+.ghost {
+  min-height: var(--tap);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  width: 100%;
+  font-size: var(--t-sm);
+}
+
+.warning {
+  background: rgba(251, 113, 133, 0.09);
+  border: 1px solid rgba(251, 113, 133, 0.28);
+  color: #fda4af;
+  padding: var(--s3);
+  border-radius: var(--r-md);
+  font-size: var(--t-sm);
+  line-height: 1.6;
+}
+
+.warning code {
+  background: rgba(0, 0, 0, 0.35);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.92em;
+  word-break: break-all;
+}
+
+@media (min-width: 30rem) {
+  .app { padding: var(--s4); gap: var(--s4); }
+}

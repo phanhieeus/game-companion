@@ -189,3 +189,54 @@ test("PRD metric #4: ≤ 4 thao tác chạm ngoài việc gõ số", async ({ pa
   await expect(page.locator(".rounds-table tbody tr")).toHaveCount(1);
   expect(taps).toBeLessThanOrEqual(4);
 });
+
+/* ---- Hoàn tác / Làm lại ---- */
+
+test("hoàn tác và làm lại nhiều bước từ bảng", async ({ page }) => {
+  await startSession(page);
+  const undo = page.getByRole("button", { name: /^Hoàn tác/ });
+  const redo = page.getByRole("button", { name: /^Làm lại/ });
+
+  // Chưa có gì thì cả hai nút đều khoá.
+  await expect(page.getByRole("button", { name: "Không còn gì để hoàn tác" })).toBeDisabled();
+
+  await addRound(page, { Nam: 1, Hùng: -1 });
+  await addRound(page, { Nam: 2, Hùng: -2 });
+  await expect(page.locator(".rounds-table tbody tr")).toHaveCount(2);
+
+  await undo.click();
+  await expect(page.locator(".rounds-table tbody tr")).toHaveCount(1);
+  await undo.click();
+  await expect(page.getByText("0 ván")).toBeVisible();
+
+  await redo.click();
+  await redo.click();
+  await expect(page.locator(".rounds-table tbody tr")).toHaveCount(2);
+  await expect(page.locator(".rounds-table tfoot td").first()).toHaveText("+3");
+});
+
+test("hoàn tác một lần sửa thì điểm quay lại giá trị cũ", async ({ page }) => {
+  await startSession(page);
+  await addRound(page, { Nam: 3, Hùng: -3 });
+
+  await page.locator(".rounds-table tbody tr").first().locator("td.tap").first().click();
+  await page.getByLabel("Điểm của Nam").fill("9");
+  await page.getByLabel("Điểm của Hùng").fill("-9");
+  await page.getByRole("button", { name: "Lưu", exact: true }).click();
+  await expect(page.locator(".rounds-table tfoot td").first()).toHaveText("+9");
+
+  await page.getByRole("button", { name: /^Hoàn tác/ }).click();
+  await expect(page.locator(".rounds-table tfoot td").first()).toHaveText("+3");
+});
+
+test("thao tác mới sau khi hoàn tác thì nút làm lại khoá", async ({ page }) => {
+  await startSession(page);
+  await addRound(page, { Nam: 1, Hùng: -1 });
+  await page.getByRole("button", { name: /^Hoàn tác/ }).click();
+  await expect(page.getByRole("button", { name: /^Làm lại/ })).toBeEnabled();
+
+  await addRound(page, { Nam: 5, Hùng: -5 });
+  await expect(
+    page.getByRole("button", { name: "Không còn gì để làm lại" }),
+  ).toBeDisabled();
+});

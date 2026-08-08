@@ -176,6 +176,67 @@ export function wasModified(round: Round): boolean {
   return roundEvents(round).some((e) => e.kind !== "created");
 }
 
+/** Một mục nhật ký kèm ván chứa nó — dùng cho ngăn xếp undo toàn phiên. */
+export interface TimelineItem {
+  event: RoundEvent;
+  round: Round;
+}
+
+/** Mọi mục nhật ký của cả phiên, xếp theo thời gian tăng dần. */
+export function sessionTimeline(session: Session): TimelineItem[] {
+  return session.rounds
+    .flatMap((round) => roundEvents(round).map((event) => ({ event, round })))
+    .sort((a, b) =>
+      a.event.at === b.event.at
+        ? a.event.id.localeCompare(b.event.id)
+        : a.event.at.localeCompare(b.event.at),
+    );
+}
+
+/**
+ * Chuỗi thao tác THẬT (bỏ các mục do bấm Hoàn tác/Làm lại sinh ra).
+ *
+ * Con trỏ undo chỉ đi trên chuỗi này. Nếu tính cả mục undo thì bấm Hoàn tác hai
+ * lần sẽ hoàn tác chính lần hoàn tác đầu — tức là redo, không phải điều người
+ * dùng muốn.
+ */
+export function actionTimeline(session: Session): TimelineItem[] {
+  return sessionTimeline(session).filter(
+    (i) => !i.event.isUndo && !i.event.isRedo,
+  );
+}
+
+export function undoDepthOf(session: Session): number {
+  return session.undoDepth ?? 0;
+}
+
+/** Thao tác kế tiếp sẽ bị hoàn tác, hoặc null nếu đã lùi hết. */
+export function nextUndoTarget(session: Session): TimelineItem | null {
+  const actions = actionTimeline(session);
+  const index = actions.length - 1 - undoDepthOf(session);
+  return index >= 0 ? (actions[index] ?? null) : null;
+}
+
+/** Thao tác kế tiếp sẽ được làm lại, hoặc null nếu đang ở hiện tại. */
+export function nextRedoTarget(session: Session): TimelineItem | null {
+  const depth = undoDepthOf(session);
+  if (depth <= 0) return null;
+  const actions = actionTimeline(session);
+  return actions[actions.length - depth] ?? null;
+}
+
+const KIND_VERB: Record<RoundEvent["kind"], string> = {
+  created: "thêm",
+  updated: "sửa",
+  voided: "xóa",
+  restored: "khôi phục",
+};
+
+/** Nhãn cho nút, ví dụ "Hoàn tác sửa ván 3". */
+export function describeAction(prefix: string, item: TimelineItem): string {
+  return `${prefix} ${KIND_VERB[item.event.kind]} ván ${item.round.sequenceNo}`;
+}
+
 export function describeConfig(config: ScoringConfig): string {
   const parts = [`nhập điểm trực tiếp`];
   if (config.zeroSum) parts.push("tổng mỗi ván = 0");
