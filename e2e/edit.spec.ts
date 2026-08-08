@@ -240,3 +240,16 @@ test("thao tác mới sau khi hoàn tác thì nút làm lại khoá", async ({ p
     page.getByRole("button", { name: "Không còn gì để làm lại" }),
   ).toBeDisabled();
 });
+
+test("mở ô ra rồi lưu y nguyên thì không hiện dấu đã-sửa", async ({ page }) => {
+  await startSession(page);
+  await addRound(page, { Nam: 3, Hùng: -3 });
+
+  // Mở ra, không đổi gì, bấm Lưu.
+  await page.locator(".rounds-table tbody tr").first().locator("td.tap").first().click();
+  await page.getByRole("button", { name: "Lưu", exact: true }).click();
+
+  // Không có dấu → không có gì để xem lịch sử.
+  await expect(page.getByRole("button", { name: "Lịch sử ván 1" })).toHaveCount(0);
+  await expect(page.locator(".rounds-table tfoot td").first()).toHaveText("+3");
+});

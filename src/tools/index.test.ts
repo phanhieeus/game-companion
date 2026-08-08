@@ -508,3 +508,112 @@ describe("hoàn tác / làm lại", () => {
     expect(events[1]!.isUndo).toBe(true);
   });
 });
+
+describe("sửa rỗng (không đổi gì)", () => {
+  const four = (ids: string[]) => [
+    { playerId: ids[0]!, delta: 3 },
+    { playerId: ids[1]!, delta: -1 },
+    { playerId: ids[2]!, delta: -1 },
+    { playerId: ids[3]!, delta: -1 },
+  ];
+
+  it("lưu y nguyên thì KHÔNG sinh mục nhật ký", () => {
+    const { tools, sessionId, ids } = setup();
+    const rec = tools.record_round({ session_id: sessionId, entries: four(ids) });
+    const roundId = rec.data!.round_id;
+
+    const saved = tools.update_round({
+      session_id: sessionId,
+      round_id: roundId,
+      entries: four(ids),
+    });
+    expect(saved.ok).toBe(true);
+
+    const events = tools.get_round_events({
+      session_id: sessionId,
+      round_id: roundId,
+    }).data!.events;
+    expect(events.map((e) => e.kind)).toEqual(["created"]);
+  });
+
+  it("thứ tự khác nhau vẫn tính là không đổi", () => {
+    const { tools, sessionId, ids } = setup();
+    const rec = tools.record_round({ session_id: sessionId, entries: four(ids) });
+    const roundId = rec.data!.round_id;
+
+    tools.update_round({
+      session_id: sessionId,
+      round_id: roundId,
+      entries: [...four(ids)].reverse(),
+    });
+
+    expect(
+      tools.get_round_events({ session_id: sessionId, round_id: roundId }).data!
+        .events,
+    ).toHaveLength(1);
+  });
+
+  it("sửa rỗng KHÔNG xoá nhánh làm lại", () => {
+    const { tools, sessionId, ids } = setup();
+    const rec = tools.record_round({ session_id: sessionId, entries: four(ids) });
+    tools.record_round({
+      session_id: sessionId,
+      entries: [
+        { playerId: ids[0]!, delta: 5 },
+        { playerId: ids[1]!, delta: -5 },
+      ],
+    });
+    tools.undo_last({ session_id: sessionId });
+    expect(tools.get_undo_state({ session_id: sessionId }).data!.redo).not.toBeNull();
+
+    // Mở ván 1 ra rồi lưu y nguyên — không phải thao tác mới, nên redo còn nguyên.
+    tools.update_round({
+      session_id: sessionId,
+      round_id: rec.data!.round_id,
+      entries: four(ids),
+    });
+    expect(tools.get_undo_state({ session_id: sessionId }).data!.redo).not.toBeNull();
+  });
+
+  it("đổi dù chỉ một điểm thì VẪN ghi nhật ký", () => {
+    const { tools, sessionId, ids } = setup();
+    const rec = tools.record_round({ session_id: sessionId, entries: four(ids) });
+    const roundId = rec.data!.round_id;
+
+    tools.update_round({
+      session_id: sessionId,
+      round_id: roundId,
+      entries: [
+        { playerId: ids[0]!, delta: 3 },
+        { playerId: ids[1]!, delta: -3 },
+        { playerId: ids[2]!, delta: 1 },
+        { playerId: ids[3]!, delta: -1 },
+      ],
+    });
+
+    expect(
+      tools.get_round_events({ session_id: sessionId, round_id: roundId }).data!
+        .events.map((e) => e.kind),
+    ).toEqual(["created", "updated"]);
+  });
+
+  /** Ván đang bị xóa thì lưu lại là KHÔI PHỤC, dù điểm y hệt. */
+  it("ván đã xóa: lưu y nguyên vẫn tính là khôi phục", () => {
+    const { tools, sessionId, ids } = setup();
+    const rec = tools.record_round({ session_id: sessionId, entries: four(ids) });
+    const roundId = rec.data!.round_id;
+    tools.undo_round({ session_id: sessionId, round_id: roundId });
+
+    tools.update_round({
+      session_id: sessionId,
+      round_id: roundId,
+      entries: four(ids),
+    });
+
+    expect(
+      tools.get_round_events({ session_id: sessionId, round_id: roundId }).data!
+        .events.map((e) => e.kind),
+    ).toEqual(["created", "voided", "restored"]);
+    expect(tools.get_scoreboard({ session_id: sessionId }).data!.roundsPlayed).toBe(1);
+  });
+});

@@ -49,6 +49,22 @@ export function __resetIdCounter(): void {
   idCounter = 0;
 }
 
+/**
+ * Hai bộ điểm có giống hệt nhau không (không kể thứ tự).
+ *
+ * Dùng để bỏ qua lần sửa rỗng: mở ô ra xem rồi bấm Lưu mà không đổi gì thì
+ * không nên sinh mục nhật ký, không nên đánh dấu ván là "đã sửa", và nhất là
+ * không nên đẩy con trỏ undo — làm vậy sẽ xoá nhánh làm lại một cách vô cớ.
+ */
+function sameEntries(a: RoundEventEntry[], b: RoundEventEntry[]): boolean {
+  if (a.length !== b.length) return false;
+  const left = new Map(a.map((e) => [e.playerId, e.delta]));
+  for (const entry of b) {
+    if (left.get(entry.playerId) !== entry.delta) return false;
+  }
+  return true;
+}
+
 /** Ảnh chụp điểm của một ván, để ghi vào nhật ký. */
 function snapshot(round: Round): RoundEventEntry[] {
   return round.entries.map((e) => ({ playerId: e.playerId, delta: e.delta }));
@@ -424,6 +440,17 @@ export function createTools(repo: SessionRepository): Tools {
 
       const before = snapshot(round);
       const wasVoided = round.status === "voided";
+
+      // Sửa rỗng: điểm y hệt VÀ ván vẫn đang hiệu lực → không có gì để ghi.
+      // Trả về thành công để UI đóng ô sửa như bình thường, nhưng không đụng
+      // vào nhật ký lẫn con trỏ undo.
+      const next = validated.data.map((e) => ({
+        playerId: e.playerId,
+        delta: e.delta,
+      }));
+      if (!wasVoided && sameEntries(before, next)) {
+        return ok({ scoreboard: computeScoreboard(session) });
+      }
 
       round.entries = validated.data.map((e) => ({
         id: newId("ent"),
