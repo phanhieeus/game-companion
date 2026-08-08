@@ -142,9 +142,14 @@ class Tracer:
         step.args = args
         step.model_ms = ms
 
-    def tool_ran(self, *, name: str, result: Any, ms: int) -> None:
+    def tool_ran(self, *, name: str, args: dict | None, result: Any, ms: int) -> None:
         step = self._current or self.begin_step()
         step.tool = step.tool or name
+        # Ở đường CHỐT, tool chạy mà không có bước "model đề xuất" đi trước, nên
+        # `args` chưa ai điền. Không ghi thì log hiện `record_round(null)` —
+        # người đọc không biết đã ghi cái gì, phải lần ngược sang lượt trước.
+        if step.args is None:
+            step.args = args
         step.observation = result
         step.tool_ms = ms
 

@@ -59,6 +59,7 @@ def _run_tool(call: ToolCall, ctx: ToolContext):
     if ctx.tracer:
         ctx.tracer.tool_ran(
             name=call.name,
+            args=call.args,
             result=result.data,
             ms=int((time.monotonic() - started) * 1000),
         )

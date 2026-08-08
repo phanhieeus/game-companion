@@ -45,7 +45,7 @@ class TestChuoiReAct:
         t.begin_step()
         t.set_prompt("PROMPT A")
         t.model_replied(text=None, tool="get_scoreboard", args={}, ms=120)
-        t.tool_ran(name="get_scoreboard", result=[{"name": "Nam", "total": 3}], ms=2)
+        t.tool_ran(name="get_scoreboard", args={}, result=[{"name": "Nam", "total": 3}], ms=2)
         t.begin_step()
         t.set_prompt("PROMPT B")
         t.model_replied(text="Nam dẫn với 3 điểm.", tool=None, args=None, ms=90)
@@ -63,7 +63,7 @@ class TestChuoiReAct:
         t = _tracer(store)
         t.begin_step()
         t.model_replied(text=None, tool="record_round", args={"entries": []}, ms=1)
-        t.tool_ran(name="record_round", result=real, ms=1)
+        t.tool_ran(name="record_round", args={"entries": []}, result=real, ms=1)
         t.finish({"type": "final", "text": "xong"})
 
         assert store.list("s1")[0]["steps"][0]["observation"] == real
@@ -88,12 +88,17 @@ class TestGoiKhongTheoThuTu:
 
     def test_tool_ran_truoc_khi_mo_buoc(self, store):
         t = _tracer(store)
-        t.tool_ran(name="record_round", result={"recorded": True}, ms=3)
+        t.tool_ran(
+            name="record_round", args={"entries": [{"player": "Nam", "delta": 3}]},
+            result={"recorded": True}, ms=3,
+        )
         t.finish({"type": "final", "text": "xong"})
 
         turn = store.list("s1")[0]
         assert len(turn["steps"]) == 1
         assert turn["steps"][0]["tool"] == "record_round"
+        # Đường chốt cũng phải thấy ĐÃ GHI GÌ, không chỉ thấy tên tool.
+        assert turn["steps"][0]["args"]["entries"][0]["player"] == "Nam"
 
     def test_model_replied_truoc_khi_mo_buoc(self, store):
         t = _tracer(store)
