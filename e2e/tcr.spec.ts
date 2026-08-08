@@ -62,10 +62,11 @@ test("T: ván đã ghi hiện trong lịch sử", async ({ page }) => {
   await say(page, "Nam ăn 3, ba người kia mỗi người chung 1");
   await page.getByRole("button", { name: "Ghi", exact: true }).click();
 
-  const row = page.locator(".history-row");
+  // C-001 đổi danh sách "Ván gần đây" thành bảng nhiều cột.
+  const row = page.locator(".rounds-table tbody tr");
   await expect(row).toHaveCount(1);
-  await expect(row.first()).toContainText("#1");
-  await expect(row.first()).toContainText("Nam");
+  await expect(row.first().locator(".c-seq")).toHaveText("1");
+  await expect(row.first().locator("td").first()).toHaveText("+3");
 });
 
 test("C: hủy ván bằng nút, không cần dùng giọng nói", async ({ page }) => {

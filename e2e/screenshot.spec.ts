@@ -50,3 +50,28 @@ test("chụp các màn hình chính", async ({ page }) => {
   await page.waitForTimeout(300);
   await page.screenshot({ path: "screenshots/4-played.png", fullPage: true });
 });
+
+/** Done-evidence cho C-001: 5 người, 3 ván, viewport 360px, không cuộn ngang. */
+test("C-001 done-evidence: bảng 5 người 3 ván @360px", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await installFakeSpeech(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "+ Thêm người chơi" }).click();
+  for (const [i, name] of ["Nam", "Hùng", "Lan", "Tú", "Minh"].entries()) {
+    await page.getByLabel(`Tên người chơi ${i + 1}`).fill(name);
+  }
+  await page.getByRole("button", { name: "Bắt đầu chơi" }).click();
+
+  const rounds: [string, number][][] = [
+    [["Nam", 4], ["Hùng", -1], ["Lan", -1], ["Tú", -1], ["Minh", -1]],
+    [["Minh", 6], ["Nam", -2], ["Hùng", -2], ["Lan", -1], ["Tú", -1]],
+    [["Tú", 3], ["Nam", -1], ["Hùng", 2], ["Lan", -3], ["Minh", -1]],
+  ];
+  for (const deltas of rounds) {
+    await mock(page, deltas);
+    await say(page, "ghi ván");
+    await page.getByRole("button", { name: "Ghi", exact: true }).click();
+    await page.waitForTimeout(150);
+  }
+  await page.screenshot({ path: "screenshots/5-table.png", fullPage: true });
+});

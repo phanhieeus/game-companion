@@ -144,12 +144,12 @@ button {
 .row .total.neg { color: var(--negative); }
 .row.leader { background: rgba(108, 140, 255, 0.09); }
 
-/* ---------- history ---------- */
+/* ---------- rounds table ---------- */
 
 .panel { display: flex; flex-direction: column; gap: 0.45rem; }
 
 .panel-title {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: var(--muted);
   text-transform: uppercase;
@@ -157,53 +157,95 @@ button {
   padding-left: 0.15rem;
 }
 
-.history { display: flex; flex-direction: column; gap: 0.35rem; }
-
 .history-empty {
   color: var(--muted);
   font-size: 0.85rem;
   padding-left: 0.15rem;
 }
 
-.history-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.55rem 0.75rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.7rem;
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
-.hseq {
-  color: var(--muted);
-  font-size: 0.78rem;
+.rounds-table {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  overflow: hidden;
+}
+
+.rounds-table table {
+  width: 100%;
+  border-collapse: collapse;
+  /* fixed = cột chia đều theo width đặt sẵn, không giãn theo nội dung.
+     Đây là thứ giữ cho 6 cột vừa 360px mà không cuộn ngang. */
+  table-layout: fixed;
   font-variant-numeric: tabular-nums;
 }
 
-.hentries {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem 0.55rem;
-  font-size: 0.83rem;
-  min-width: 0;
+.rounds-table th,
+.rounds-table td {
+  text-align: right;
+  padding: 0.42rem 0.3rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.hchip { color: var(--muted); white-space: nowrap; }
-.hchip b { font-variant-numeric: tabular-nums; }
-.hchip b.pos { color: var(--positive); }
-.hchip b.neg { color: var(--negative); }
+/* Càng đông người càng phải co chữ — 5 người là 7 cột kể cả Ván và nút hủy. */
+.rounds-table.cols-4 th, .rounds-table.cols-4 td { font-size: 0.88rem; }
+.rounds-table.cols-5 th, .rounds-table.cols-5 td { font-size: 0.78rem; padding-inline: 0.2rem; }
 
-.hundo {
-  padding: 0.35rem 0.6rem;
-  border-radius: 0.5rem;
-  background: var(--surface-2);
+.rounds-table thead th {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding-top: 0.6rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--border);
 }
 
-.hundo:active { background: var(--negative); color: #2a0710; }
+.rounds-table .c-seq {
+  width: 2.1rem;
+  text-align: left;
+  padding-left: 0.7rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.rounds-table .c-act { width: 1.9rem; text-align: center; padding-inline: 0; }
+
+.rounds-table .c-act button {
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.3rem 0.4rem;
+  border-radius: 0.35rem;
+}
+
+.rounds-table .c-act button:active { background: var(--negative); color: #2a0710; }
+
+.rounds-table tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.022); }
+
+.rounds-table td.pos { color: var(--positive); }
+.rounds-table td.neg { color: var(--negative); }
+.rounds-table td.empty { color: #4a4a58; }
+
+.rounds-table tfoot td,
+.rounds-table tfoot th {
+  border-top: 1px solid var(--border);
+  font-weight: 700;
+  padding-top: 0.5rem;
+  padding-bottom: 0.55rem;
+  background: rgba(108, 140, 255, 0.06);
+}
 
 /* ---------- transcript ---------- */
 

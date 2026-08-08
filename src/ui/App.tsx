@@ -5,7 +5,7 @@ import { LocalStorageSessionRepository } from "../repository/localStorageReposit
 import { createTools } from "../tools";
 import { useConversation } from "../conversation/useConversation";
 import { isSpeechRecognitionSupported } from "../voice/speech";
-import { History } from "./History";
+import { RoundsTable } from "./RoundsTable";
 import { ProposalCard } from "./ProposalCard";
 import { Scoreboard } from "./Scoreboard";
 import { SetupScreen } from "./SetupScreen";
@@ -145,8 +145,13 @@ export function App() {
       <Scoreboard scoreboard={scoreboard} mePlayerId={session.mePlayerId} />
 
       <section className="panel">
-        <h2 className="panel-title">Ván gần đây</h2>
-        <History session={session} rounds={history} onUndo={undoRound} />
+        <h2 className="panel-title">Điểm từng ván</h2>
+        <RoundsTable
+          session={session}
+          rounds={history}
+          order="newest-last"
+          onUndo={undoRound}
+        />
       </section>
 
       <div className="spacer" />
