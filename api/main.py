@@ -88,7 +88,12 @@ class Health(BaseModel):
 if admin_token():
     from .routes.admin import build_admin_router
 
-    app.include_router(build_admin_router(trace_store, repo), prefix="/api/admin")
+    app.include_router(
+        # Kho phiên trong RAM tiêm vào (C-029) — trang quan sát không có cách
+        # nào đếm ngược ra con số đó từ vết đã lưu, phải hỏi thẳng chỗ giữ nó.
+        build_admin_router(trace_store, repo, agent_router.sessions),  # type: ignore[attr-defined]
+        prefix="/api/admin",
+    )
     print("[api] trang admin BẬT (có ADMIN_TOKEN)", file=sys.stderr, flush=True)
 
 
@@ -120,6 +125,11 @@ if os.environ.get("E2E_RESET") == "1":
         # Dọn cả hạn mức: mỗi test bắt đầu từ con số không, nếu không thì test
         # chạy sau bị test chạy trước ăn mất phần.
         agent_router.limiter.reset()  # type: ignore[attr-defined]
+        # Và dọn NGAY kho phiên trong RAM (C-029). Quét rác lúc đọc số liệu thì
+        # con số hiện ra vẫn đúng, nhưng giữa reset và lần đọc đó rác vẫn nằm
+        # trong RAM — "reset" phải nghĩa là sạch ngay, không phải sạch lúc có
+        # người nhìn.
+        agent_router.sessions.clear()  # type: ignore[attr-defined]
         return {"ok": True}
 
     print("[api] E2E_RESET đang BẬT — có route xoá sạch dữ liệu.", file=sys.stderr, flush=True)

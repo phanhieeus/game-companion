@@ -20,7 +20,20 @@ def admin_token() -> str | None:
     return os.environ.get("ADMIN_TOKEN") or None
 
 
-def build_admin_router(trace_store, repo) -> APIRouter:
+def build_admin_router(trace_store, repo, session_store=None) -> APIRouter:
+    """`session_store` là kho phiên trong RAM của router agent (C-029).
+
+    TIÊM VÀO chứ không import từ `routes/agent.py`: hai module route import chéo
+    nhau là vòng phụ thuộc, và nó buộc kho phiên phải là biến toàn cục — thứ
+    khiến test dựng app nhiều lần thừa hưởng phiên của app trước.
+
+    Tên KHÔNG phải `sessions`: route `GET /sessions` ngay dưới cũng tên đó, và
+    một hàm def trong cùng closure sẽ đè mất tham số — con số đọc ra sẽ là
+    `len(<function>)`, tức nổ ngay tại chỗ. Đã dẫm phải một lần lúc gộp.
+
+    Cho phép `None` để trang quan sát vẫn dựng được khi không ai đưa kho vào;
+    lúc đó số liệu chỉ thiếu đúng ô này chứ không sập cả trang.
+    """
     router = APIRouter()
 
     def denied() -> JSONResponse:
@@ -82,6 +95,17 @@ def build_admin_router(trace_store, repo) -> APIRouter:
     ):
         if not ok_token(x_admin_token, token):
             return denied()
-        return trace_store.stats()
+        data = trace_store.stats()
+        # Phiên agent nằm trong RAM của tiến trình, không nằm ở kho vết, nên
+        # không có cách nào đếm ngược ra được từ dữ liệu đã lưu — phải hỏi thẳng
+        # chỗ giữ nó. Con số này là lý do C-029 tồn tại: trước đó không ai biết
+        # server đang ôm bao nhiêu phiên, kể cả người viết ra nó.
+        if session_store is not None:
+            session_store.sweep(lambda sid: repo.get(sid) is not None)
+            data["sessionsInMemory"] = {
+                "count": len(session_store),
+                "limit": session_store.limit,
+            }
+        return data
 
     return router

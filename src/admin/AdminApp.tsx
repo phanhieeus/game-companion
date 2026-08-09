@@ -120,6 +120,14 @@ function StatsPanel({ stats }: { stats: Stats }) {
       <div className="adm-stat">
         số bước tb <b>{stats.steps.avg}</b> · nhiều nhất <b>{stats.steps.max}</b>
       </div>
+      {/* Kiểm tra tồn tại vì máy chủ chưa cập nhật thì không có trường này, và
+          thiếu một con số không được phép làm trắng cả trang quan sát. */}
+      {stats.sessionsInMemory && (
+        <div className="adm-stat">
+          phiên trong RAM <b>{stats.sessionsInMemory.count}</b> / trần{" "}
+          {stats.sessionsInMemory.limit}
+        </div>
+      )}
       <div className="adm-stat">
         kết cục:{" "}
         {entries(stats.outcomes).map(([k, v]) => (

@@ -7,8 +7,10 @@ chạy tool**. Lời gọi đang chờ xác nhận nằm ở đây cho tới khi
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Callable
 from uuid import uuid4
 
 from fastapi import APIRouter, Body, Header, Request
@@ -45,6 +47,96 @@ class AgentSession:
     device_id: str | None = None
 
 
+#: Trần số phiên giữ trong RAM cùng lúc.
+#:
+#: Con số này ĐO RỒI MỚI ĐẶT (C-029), vì đặt trần cho thứ chưa đo là đoán: đoán
+#: cao thì trần vô dụng, đoán thấp thì dọn nhầm phiên người ta đang chơi. Đo
+#: bằng RSS trên 2000 mục: một mục vừa mở nặng ~0,8 KB, một mục đầy cửa sổ 12
+#: lượt kèm chữ ký suy nghĩ của Gemini nặng ~15 KB. 500 mục vì thế chiếm
+#: 0,4–7,7 MB — vặt so với 512 MB của Render, mà vẫn cao hơn nhiều lần số phiên
+#: thật sự nói cùng lúc, nên trần chỉ chạm tới rác chứ không chạm tới người chơi.
+MAX_SESSIONS_IN_RAM = 500
+
+
+class SessionStore:
+    """Chỗ giữ phiên agent trong RAM — có trần, và có thứ tự bỏ rõ ràng.
+
+    Trước C-029 đây là một dict chỉ có chỗ THÊM: không dọn khi phiên kết thúc,
+    không dọn theo tuổi, không có trần. Tiến trình Render sống rất lâu nên số
+    mục tăng đơn điệu theo số phiên từng mở miệng nói chuyện với agent — rò
+    chậm, nhưng không có điểm dừng.
+
+    Hai luật khi phải bỏ bớt:
+
+    - Bỏ mục ÍT DÙNG GẦN ĐÂY NHẤT. Bỏ ngẫu nhiên thì phiên đang chơi cũng có
+      phần bị bỏ y như phiên đã bỏ đi từ hôm qua.
+    - Phiên đang chờ chốt (`pending`) bỏ SAU CÙNG. Bỏ nhầm nó thì người dùng bấm
+      Ghi và nhận 409: đề xuất bốc hơi ngay giữa lúc họ đang quyết. Mất
+      `pending` của một phiên đã im lặng rất lâu thì chấp nhận được; giữ RAM vô
+      hạn thì không.
+
+    Bị bỏ không phải là mất dữ liệu: ván bài nằm ở kho phiên, thứ mất chỉ là hội
+    thoại trong lượt. Nói lại một câu là mục mới được dựng và mọi thứ chạy tiếp.
+    """
+
+    def __init__(self, limit: int = MAX_SESSIONS_IN_RAM) -> None:
+        self.limit = limit
+        self._items: "OrderedDict[str, AgentSession]" = OrderedDict()
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    def __contains__(self, session_id: str) -> bool:
+        return session_id in self._items
+
+    def clear(self) -> None:
+        self._items.clear()
+
+    def drop(self, session_id: str) -> None:
+        self._items.pop(session_id, None)
+
+    def touch(
+        self, session_id: str, make: Callable[[], AgentSession]
+    ) -> AgentSession:
+        """Lấy mục của phiên, dựng mới nếu chưa có, và đánh dấu là vừa dùng."""
+        if session_id not in self._items:
+            self._items[session_id] = make()
+        self._items.move_to_end(session_id)
+        self._trim()
+        return self._items[session_id]
+
+    def sweep(self, alive: Callable[[str], bool]) -> None:
+        """Bỏ mục của những phiên KHÔNG CÒN trong kho.
+
+        Giữ RAM cho một phiên đã bị xoá là giữ rác thuần tuý — không ai gọi lại
+        được nó nữa.
+
+        Đây cũng là đường `/api/test/reset` dọn sạch chỗ này: reset xoá mọi phiên
+        khỏi kho, nên lần quét kế tiếp không còn mục nào sống sót. Quét chạy khi
+        trang quan sát đọc số liệu, tức là dọn NGAY TRƯỚC khi con số được đọc —
+        con số hiện ra không bao giờ đếm phiên đã chết. Chỗ duy nhất còn hở là
+        khoảng giữa hai lần đọc, và ở đó rác vẫn bị trần chặn.
+        """
+        for session_id in [s for s in self._items if not alive(s)]:
+            del self._items[session_id]
+
+    def _trim(self) -> None:
+        while len(self._items) > self.limit:
+            self._items.pop(self._victim())
+
+    def _victim(self) -> str:
+        """Mục ít dùng gần đây nhất trong số phiên ĐANG RẢNH.
+
+        Chỉ khi cả kho đều đang chờ chốt mới đụng tới phiên chờ chốt — lúc đó
+        chọn cái cũ nhất, vì trần vẫn phải là trần.
+        """
+        idle = next(
+            (s for s, state in self._items.items() if state.pending is None), None
+        )
+        return idle if idle is not None else next(iter(self._items))
+
+
+#: Một tiến trình, một chỗ giữ phiên.
 def build_agent_router(
     tools: Tools,
     repo: SessionRepository,
@@ -55,9 +147,15 @@ def build_agent_router(
     router = APIRouter()
     turns_kho: TurnStore = turn_store or InMemoryTurnStore()
     # `sessions` giờ chỉ giữ thứ KHÔNG cất được: lời gọi đang chờ chốt và mấy ý
-    # định UI của lượt vừa rồi. Trí nhớ đã xuống kho nên mất dict này không còn
-    # làm agent quên gì nữa (C-027).
-    sessions: dict[str, AgentSession] = {}
+    # định UI của lượt vừa rồi. Trí nhớ đã xuống kho (C-027) nên bị dọn khỏi RAM
+    # không còn làm agent quên gì nữa — chính điều đó khiến trần của C-029 gần
+    # như miễn phí: mất mục chỉ là mất chỗ đệm, không mất ngữ cảnh.
+    #
+    # Gắn vào ROUTER chứ không để ở mức module: dựng router mới nghĩa là dựng
+    # server mới, mà RAM của server mới thì rỗng. Một biến toàn cục sẽ khiến
+    # test dựng app nhiều lần thừa hưởng phiên của app trước, và buộc
+    # `admin.py` phải import ngược sang đây. Cùng lối với `limiter` ngay dưới.
+    sessions = SessionStore()
     # Mỗi lượt tiêu MỘT lượt gọi Gemini bằng key của operator, trên một URL công
     # khai. Không có lớp này thì ai biết địa chỉ cũng đốt sạch quota (C-021).
     limiter = RateLimiter()
@@ -89,11 +187,12 @@ def build_agent_router(
         return f"{device_id or 'khong-thiet-bi'}|{ip}"
 
     def state_of(session_id: str) -> AgentSession:
-        if session_id not in sessions:
-            sessions[session_id] = AgentSession(
+        return sessions.touch(
+            session_id,
+            lambda: AgentSession(
                 memory=create_memory(session_id, fact_store, turns_kho)
-            )
-        return sessions[session_id]
+            ),
+        )
 
     def purge_if_ended(session_id: str, state: AgentSession) -> None:
         """Phiên vừa kết thúc thì dọn cả hai tầng nhớ.
@@ -118,6 +217,9 @@ def build_agent_router(
     ) -> ToolContext | None:
         session = repo.get(session_id)
         if session is None:
+            # Phiên đã bị xoá khỏi kho thì mục vừa dựng ở `state_of` là rác:
+            # không ai gọi lại được nó nữa, giữ chỉ tổ chiếm chỗ của phiên thật.
+            sessions.drop(session_id)
             return None
 
         async def model(messages: list[AgentMessage]):
@@ -282,4 +384,8 @@ def build_agent_router(
         return answer
 
     router.limiter = limiter  # type: ignore[attr-defined]  # cho test đặt lại
+    #: Trang quan sát (C-023) và `/api/test/reset` đều phải với tới kho phiên.
+    #: Gắn vào router theo đúng lối `limiter` đã đi, thay vì để một biến toàn cục
+    #: cho hai module import chéo nhau.
+    router.sessions = sessions  # type: ignore[attr-defined]
     return router
