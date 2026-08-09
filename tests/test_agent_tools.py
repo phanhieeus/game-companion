@@ -53,7 +53,12 @@ def h() -> Harness:
 
 class TestDiQuaDungToolLayer:
     def test_chan_van_khong_can_cung_loi_nhu_nhap_tay(self, h: Harness):
-        result = h.run("record_round", {"entries": entries(("Nam", 3), ("Hùng", -1))})
+        # Đủ người nhưng tổng = -1: phải rơi vào đúng lưới zero-sum, không phải
+        # lưới thiếu người.
+        result = h.run(
+            "record_round",
+            {"entries": entries(("Nam", 3), ("Hùng", -1), ("Lan", -1), ("Tú", -2))},
+        )
         assert result.ok is False
         assert "bằng 0" in result.data["error"]
         assert h.session.rounds == []
@@ -127,6 +132,8 @@ class TestChotXacNhanKhaiOTool:
 
     MUTATING = [
         "record_round",
+        "record_ranking",
+        "set_house_rules",
         "update_round",
         "delete_round",
         "add_player",
@@ -190,7 +197,14 @@ class TestToolDoc:
 
     def test_get_history_moi_nhat_truoc(self, h: Harness):
         for n in (1, 2, 3):
-            h.run("record_round", {"entries": entries(("Nam", n), ("Hùng", -n))})
+            h.run(
+                "record_round",
+                {
+                    "entries": entries(
+                        ("Nam", 3 * n), ("Hùng", -n), ("Lan", -n), ("Tú", -n)
+                    )
+                },
+            )
         rounds = h.run("get_history", {"limit": 2}).data
         assert [r["round"] for r in rounds] == [3, 2]
 
@@ -218,6 +232,188 @@ class TestKhaiBaoGuiChoGemini:
 
     def test_ten_tool_khong_trung_nhau(self):
         assert len(tool_by_name()) == len(AGENT_TOOLS)
+
+
+BANG_4 = [3, 1, -1, -3]
+TU_QUY = {"name": "tứ quý", "points": 5, "paidBy": "each"}
+
+
+class TestKhongDuNguoiThiKhongGhi:
+    """Chốt bằng CODE, KHÔNG đi qua model.
+
+    Cả lớp này gọi thẳng hàm `run` của tool — không có Gemini, không có prompt,
+    không có kịch bản nào. Nó tồn tại để chứng minh chốt không phụ thuộc model
+    có ngoan hay không: đổi model, đổi prompt, đổi câu chữ, những ca dưới đây
+    vẫn phải đỏ nếu ai gỡ chốt đi.
+    """
+
+    def test_record_round_thieu_mot_nguoi_thi_bi_tu_choi(self, h: Harness):
+        result = h.run(
+            "record_round",
+            {"entries": entries(("Nam", 3), ("Hùng", -1), ("Lan", -2))},
+        )
+
+        assert result.ok is False
+        assert "Tú" in result.data["error"]
+        assert h.session.rounds == []
+
+    def test_loi_tu_choi_la_loi_nhac_de_hoi_lai(self, h: Harness):
+        """Không phải "sai cú pháp" — phải là câu đủ để agent đi hỏi tiếp."""
+        result = h.run("record_round", {"entries": entries(("Nam", 0), ("Hùng", 0))})
+        assert "Lan, Tú" in result.data["error"]
+        assert "Hỏi lại" in result.data["error"]
+
+    def test_van_thieu_nguoi_bi_chan_ngay_ca_khi_tong_da_bang_0(self, h: Harness):
+        """Tổng cân KHÔNG chứng minh là đủ người — hai lưới bắt hai thứ khác nhau."""
+        result = h.run("record_round", {"entries": entries(("Nam", 3), ("Hùng", -3))})
+        assert result.ok is False
+        assert h.session.rounds == []
+
+    def test_nguoi_0_diem_van_duoc_tinh_la_da_nhac_ten(self, h: Harness):
+        """Nói rõ "Tú không được không mất" khác hẳn với im lặng về Tú."""
+        result = h.run(
+            "record_round",
+            {"entries": entries(("Nam", 3), ("Hùng", -3), ("Lan", 0), ("Tú", 0))},
+        )
+        assert result.ok
+
+    def test_nguoi_da_roi_phien_khong_bi_doi_diem(self, h: Harness):
+        tu = next(p for p in h.session.players if p.name == "Tú")
+        h.tools.remove_player(h.session_id, tu.id)
+
+        result = h.run(
+            "record_round",
+            {"entries": entries(("Nam", 2), ("Hùng", -1), ("Lan", -1))},
+        )
+        assert result.ok
+
+    def test_record_ranking_cung_chiu_dung_chot_do(self, h: Harness):
+        h.tools.update_scoring_config(h.session_id, {"rankPoints": BANG_4})
+        result = h.run("record_ranking", {"ranking": ["Nam", "Lan", "Hùng"]})
+
+        assert result.ok is False
+        assert "Tú" in result.data["error"]
+        assert h.session.rounds == []
+
+
+class TestGhiTheoLuatNha:
+    def test_noi_thu_hang_ra_dung_bon_con_so(self, h: Harness):
+        h.tools.update_scoring_config(h.session_id, {"rankPoints": BANG_4})
+
+        result = h.run("record_ranking", {"ranking": ["Nam", "Lan", "Hùng", "Tú"]})
+
+        assert result.ok and result.data["recorded"] is True
+        deltas = {
+            next(p.name for p in h.session.players if p.id == e.playerId): e.delta
+            for e in h.session.rounds[0].entries
+        }
+        assert deltas == {"Nam": 3, "Lan": 1, "Hùng": -1, "Tú": -3}
+        assert sum(deltas.values()) == 0
+
+    def test_the_de_xuat_hien_du_bon_dong_truoc_khi_ghi(self, h: Harness):
+        h.tools.update_scoring_config(h.session_id, {"rankPoints": BANG_4})
+        rows = tool_by_name()["record_ranking"].propose(
+            {"ranking": ["Nam", "Lan", "Hùng", "Tú"]}, h.ctx
+        )
+        assert len(rows) == 4
+        assert sum(r.delta for r in rows) == 0
+
+    def test_an_tu_quy_thi_ba_nguoi_kia_moi_nguoi_chung_du(self, h: Harness):
+        h.tools.update_scoring_config(h.session_id, {"bonuses": [TU_QUY]})
+
+        result = h.run("record_ranking", {"bonuses": [{"bonus": "tứ quý", "player": "Nam"}]})
+
+        assert result.ok
+        deltas = {
+            next(p.name for p in h.session.players if p.id == e.playerId): e.delta
+            for e in h.session.rounds[0].entries
+        }
+        assert deltas == {"Nam": 15, "Hùng": -5, "Lan": -5, "Tú": -5}
+
+    def test_bang_hang_lech_so_nguoi_thi_bao_ro_chu_khong_tinh_bua(self, h: Harness):
+        h.tools.update_scoring_config(h.session_id, {"rankPoints": BANG_4})
+        h.tools.add_player(h.session_id, "Mai")
+
+        result = h.run(
+            "record_ranking", {"ranking": ["Nam", "Hùng", "Lan", "Tú", "Mai"]}
+        )
+
+        assert result.ok is False
+        assert "4" in result.data["error"] and "5" in result.data["error"]
+        assert h.session.rounds == []
+
+    def test_chua_dat_luat_thi_khong_bia_ra_luat(self, h: Harness):
+        result = h.run("record_ranking", {"ranking": ["Nam", "Hùng", "Lan", "Tú"]})
+        assert result.ok is False
+        assert h.session.rounds == []
+
+    def test_zero_sum_van_la_cong_cuoi(self, h: Harness):
+        """Bảng lệch lọt vào cấu hình bằng cửa sau thì lưới cuối vẫn bắt."""
+        session = h.session
+        session.scoringConfig = session.scoringConfig.model_copy(
+            update={"rankPoints": [3, 1, -1, -2]}
+        )
+        h.repo.save(session)
+
+        result = h.run("record_ranking", {"ranking": ["Nam", "Hùng", "Lan", "Tú"]})
+
+        assert result.ok is False
+        assert "bằng 0" in result.data["error"]
+        assert h.session.rounds == []
+
+
+class TestDatLuatBangLoi:
+    def test_noi_luat_vao_dung_cho_nhu_bam_tay(self, h: Harness):
+        """Cùng một `update_scoring_config`, nên phải ra cùng một cấu hình."""
+        result = h.run(
+            "set_house_rules", {"rankPoints": BANG_4, "bonuses": [TU_QUY]}
+        )
+        assert result.ok and result.changed
+        bang_loi = h.session.scoringConfig
+
+        # Đường của màn Cài đặt: PATCH /settings gọi thẳng hàm này.
+        khac = Harness()
+        khac.tools.update_scoring_config(
+            khac.session_id, {"rankPoints": BANG_4, "bonuses": [TU_QUY]}
+        )
+
+        assert bang_loi == khac.session.scoringConfig
+        assert bang_loi.rankPoints == BANG_4
+        assert bang_loi.bonuses[0].name == "tứ quý"
+
+    def test_dat_bang_lech_so_nguoi_thi_bi_chan(self, h: Harness):
+        result = h.run("set_house_rules", {"rankPoints": [3, -3]})
+        assert result.ok is False
+        assert h.session.scoringConfig.rankPoints is None
+
+    def test_dat_bang_khong_can_thi_bi_chan(self, h: Harness):
+        result = h.run("set_house_rules", {"rankPoints": [3, 1, -1, -2]})
+        assert result.ok is False
+        assert "bằng 0" in result.data["error"]
+
+    def test_cau_hoi_xac_nhan_doc_ra_dung_luat_sap_dat(self, h: Harness):
+        prompt = tool_by_name()["set_house_rules"].describe(
+            {"rankPoints": BANG_4, "bonuses": [TU_QUY]}, h.ctx
+        )
+        assert "nhất +3" in prompt and "bét -3" in prompt
+        assert "tứ quý" in prompt
+
+    def test_khong_noi_luat_nao_thi_khong_doi_gi(self, h: Harness):
+        assert h.run("set_house_rules", {}).ok is False
+
+    def test_dat_thuong_thay_the_danh_sach_cu(self, h: Harness):
+        h.run("set_house_rules", {"bonuses": [TU_QUY]})
+        h.run("set_house_rules", {"bonuses": [{"name": "ù", "points": 3, "paidBy": "each"}]})
+
+        names = [b.name for b in h.session.scoringConfig.bonuses]
+        assert names == ["ù"]
+
+    def test_moi_phien_giu_luat_cua_rieng_no(self, h: Harness):
+        """Cấu hình mặc định là một hằng dùng chung — sửa phiên này không được
+        chạm vào phiên khác."""
+        khac = Harness()
+        h.run("set_house_rules", {"bonuses": [TU_QUY]})
+        assert khac.session.scoringConfig.bonuses == []
 
 
 class TestTriNho:

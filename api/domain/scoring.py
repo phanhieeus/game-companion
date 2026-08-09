@@ -13,6 +13,7 @@ from .models import (
     MAX_PLAYERS,
     MIN_PLAYERS,
     DraftEntry,
+    Player,
     Round,
     RoundEvent,
     ScoreEntry,
@@ -116,6 +117,196 @@ def validate_round_entries(
                 )
 
     return ok(entries)
+
+
+# ── Luật nhà: điểm theo thứ hạng và thưởng ─────────────────────────────────
+#
+# Bàn bài thật chơi theo luật có sẵn, và người chơi chỉ nói KẾT QUẢ: "Nam nhất,
+# Lan nhì, Hùng ba, Tú bét". Phần dịch từ kết quả sang bốn con số nằm ở ĐÂY,
+# thuần và kiểm được — không nằm trong prompt, vì một phép cộng sai do model
+# đoán thì vào sổ và trông y như thật.
+
+_RANK_WORDS = ["nhất", "nhì", "ba", "tư", "năm", "sáu", "bảy"]
+
+
+def active_players(session: Session) -> list[Player]:
+    return [p for p in session.players if p.status == "active"]
+
+
+def rank_labels(count: int) -> list[str]:
+    """["nhất", "nhì", "ba", "bét"] cho bàn 4 người.
+
+    Người cuối cùng luôn là "bét" chứ không phải "tư"/"năm" — đó là chữ người ta
+    nói ra ở bàn, và cũng là chữ hiện lên màn Cài đặt.
+    """
+    if count <= 0:
+        return []
+    labels = _RANK_WORDS[:count] + [str(i + 1) for i in range(len(_RANK_WORDS), count)]
+    labels[-1] = "bét"
+    return labels
+
+
+def players_missing_from(session: Session, entries: list[DraftEntry]) -> list[str]:
+    """Tên những người ĐANG CHƠI mà ván không nhắc tới.
+
+    Vắng tên không có nghĩa là 0 điểm — nó có nghĩa là chưa biết. Cho một người
+    không được nhắc tên con số 0 là kiểu sai tệ nhất app này có thể mắc: nó vào
+    sổ, trông như thật, và không ai biết để cãi.
+    """
+    named = {e.playerId for e in entries}
+    return [p.name for p in active_players(session) if p.id not in named]
+
+
+def describe_missing(missing: list[str]) -> str:
+    """Lời nhắc để agent hỏi lại — không phải lời xin lỗi, mà là câu hỏi cụ thể."""
+    return (
+        f"Chưa biết điểm của {', '.join(missing)}. Hỏi lại rồi mới ghi; "
+        "tuyệt đối không tự cho ai 0 điểm chỉ vì không nghe thấy tên."
+    )
+
+
+def validate_scoring_config(session: Session, config: ScoringConfig) -> Result[ScoringConfig]:
+    """Chặn luật nhà vô nghĩa ngay lúc ĐẶT, không đợi tới lúc ghi ván.
+
+    Sai ở đây thì người ta còn đang nhìn màn Cài đặt và sửa được ngay; sai lúc
+    ghi ván thì đang giữa ván bài và chỉ thấy một câu từ chối khó hiểu.
+    """
+    count = len(active_players(session))
+
+    if config.rankPoints is not None:
+        if len(config.rankPoints) != count:
+            return err(
+                "RANK_POINTS_MISMATCH",
+                f"Bảng hạng có {len(config.rankPoints)} mức nhưng bàn đang có "
+                f"{count} người. Cho đủ {count} mức, từ nhất xuống bét.",
+            )
+        if config.zeroSum and sum(config.rankPoints) != 0:
+            # zeroSum vẫn là cổng cuối: có luật nhà rồi cũng không nới nó. Bắt ở
+            # đây để người đặt luật biết ngay, thay vì mỗi ván ghi lại bị chặn.
+            return err(
+                "SUM_DELTA_NOT_ZERO",
+                f"Tổng bảng hạng phải bằng 0, đang là {sum(config.rankPoints)}.",
+            )
+
+    for bonus in config.bonuses:
+        if not bonus.name.strip():
+            return err("BONUS_INVALID", "Thưởng phải có tên.")
+        if bonus.paidBy == "split" and count > 1 and bonus.points % (count - 1) != 0:
+            return err(
+                "BONUS_INVALID",
+                f'Thưởng "{bonus.name}" {bonus.points} điểm chia đều cho '
+                f"{count - 1} người không ra số nguyên.",
+            )
+
+    return ok(config)
+
+
+def deltas_from_ranking(
+    session: Session,
+    ranking: list[str],
+    awards: list[tuple[str, str]],
+) -> Result[list[DraftEntry]]:
+    """Thứ hạng + thưởng → điểm từng người, theo luật nhà của phiên.
+
+    `ranking` là id người chơi xếp từ nhất xuống bét; `awards` là các cặp
+    (tên thưởng, id người ăn). Kết quả LUÔN có đủ mọi người đang chơi, kể cả
+    người 0 điểm — nhờ vậy ván suy ra từ đây không bao giờ bỏ sót ai.
+    """
+    players = active_players(session)
+    ids = [p.id for p in players]
+    names = {p.id: p.name for p in players}
+    config = session.scoringConfig
+    totals: dict[str, int] = {pid: 0 for pid in ids}
+
+    if not ranking and not awards:
+        return err("EMPTY_ROUND", "Chưa nói thứ hạng lẫn thưởng nào.")
+
+    if ranking:
+        if not config.rankPoints:
+            return err(
+                "NO_RANK_POINTS",
+                "Phiên này chưa đặt bảng điểm theo thứ hạng. Đặt ở màn Cài đặt "
+                "hoặc nói rõ luật trước đã.",
+            )
+        # Thêm/bớt người giữa phiên thì bảng hạng cũ không dùng được nữa. Báo
+        # dứt khoát; im lặng co giãn bảng là tự bịa ra luật nhà mới.
+        if len(config.rankPoints) != len(players):
+            return err(
+                "RANK_POINTS_MISMATCH",
+                f"Bảng hạng đang đặt cho {len(config.rankPoints)} người nhưng "
+                f"bàn đang có {len(players)}. Đặt lại bảng hạng rồi hãy ghi.",
+            )
+        unknown = [pid for pid in ranking if pid not in totals]
+        if unknown:
+            return err("PLAYER_NOT_IN_SESSION", "Có người không thuộc phiên này.")
+        if len(set(ranking)) != len(ranking):
+            return err(
+                "DUPLICATE_PLAYER_IN_ROUND", "Một người không thể vừa nhất vừa nhì."
+            )
+        missing = [names[pid] for pid in ids if pid not in ranking]
+        if missing:
+            return err("MISSING_PLAYERS", describe_missing(missing))
+        for index, pid in enumerate(ranking):
+            totals[pid] += config.rankPoints[index]
+
+    for bonus_name, winner_id in awards:
+        needle = (bonus_name or "").strip().lower()
+        bonus = next((b for b in config.bonuses if b.name.lower() == needle), None)
+        if bonus is None:
+            known = ", ".join(f'"{b.name}"' for b in config.bonuses) or "chưa có gì"
+            return err(
+                "BONUS_NOT_FOUND",
+                f'Luật nhà không có thưởng "{bonus_name}". Đang có: {known}.',
+            )
+        if winner_id not in totals:
+            return err("PLAYER_NOT_IN_SESSION", "Người ăn thưởng không thuộc phiên này.")
+
+        others = [pid for pid in ids if pid != winner_id]
+        if not others:
+            return err("EMPTY_ROUND", "Không có ai chung thưởng.")
+
+        if bonus.paidBy == "each":
+            totals[winner_id] += bonus.points * len(others)
+            for pid in others:
+                totals[pid] -= bonus.points
+        else:
+            share, remainder = divmod(bonus.points, len(others))
+            if remainder:
+                return err(
+                    "BONUS_INVALID",
+                    f'Thưởng "{bonus.name}" {bonus.points} điểm chia đều cho '
+                    f"{len(others)} người không ra số nguyên.",
+                )
+            totals[winner_id] += bonus.points
+            for pid in others:
+                totals[pid] -= share
+
+    return ok([DraftEntry(playerId=pid, delta=totals[pid]) for pid in ids])
+
+
+def describe_house_rules(session: Session) -> str:
+    """Luật nhà bằng lời, để đọc lên khi xin xác nhận và để nhét vào prompt."""
+    config = session.scoringConfig
+    count = len(active_players(session))
+    parts: list[str] = []
+
+    if config.rankPoints:
+        labels = rank_labels(len(config.rankPoints))
+        parts.append(
+            "hạng: "
+            + ", ".join(
+                f"{label} {'+' if point > 0 else ''}{point}"
+                for label, point in zip(labels, config.rankPoints)
+            )
+        )
+        if len(config.rankPoints) != count:
+            parts.append(f"(đang đặt cho {len(config.rankPoints)} người, bàn có {count})")
+
+    for bonus in config.bonuses:
+        how = "mỗi người còn lại chung đủ" if bonus.paidBy == "each" else "chia đều"
+        parts.append(f'"{bonus.name}" {bonus.points} điểm, {how}')
+
+    return "; ".join(parts)
 
 
 def validate_player_count(count: int) -> Result[int]:
@@ -226,4 +417,8 @@ def describe_config(config: ScoringConfig) -> str:
         parts.append("tổng mỗi ván = 0")
     if config.startingScore != 0:
         parts.append(f"bắt đầu từ {config.startingScore}")
+    if config.rankPoints:
+        parts.append("có bảng điểm theo thứ hạng")
+    if config.bonuses:
+        parts.append(f"{len(config.bonuses)} khoản thưởng")
     return ", ".join(parts)

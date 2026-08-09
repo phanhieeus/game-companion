@@ -14,6 +14,31 @@ import { SetupScreen } from "./SetupScreen";
 
 const EMPTY_SCOREBOARD: Scoreboard = { rows: [], roundsPlayed: 0 };
 
+const RANK_WORDS = ["nhất", "nhì", "ba", "tư", "năm", "sáu", "bảy"];
+
+/**
+ * ["nhất", "nhì", "ba", "bét"] cho bàn 4 người.
+ *
+ * Chép lại `rank_labels` bên Python thay vì kéo qua dây: đây là CHỮ HIỆN LÊN
+ * nhãn ô nhập, không phải dữ liệu — thêm một field vào response chỉ để mang mấy
+ * chữ này là làm bẩn hợp đồng vì một chuyện thuần hiển thị.
+ */
+const rankLabels = (count: number): string[] => {
+  if (count <= 0) return [];
+  const labels = Array.from(
+    { length: count },
+    (_, i) => RANK_WORDS[i] ?? String(i + 1),
+  );
+  labels[count - 1] = "bét";
+  return labels;
+};
+
+interface BonusDraft {
+  name: string;
+  points: string;
+  paidBy: "each" | "split";
+}
+
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [scoreboard, setScoreboard] = useState<Scoreboard>(EMPTY_SCOREBOARD);
@@ -31,6 +56,11 @@ export function App() {
   // Giới hạn số người chơi do server áp (ADR 17). Mặc định 4–5 chỉ để form vẽ
   // được trước khi /health trả lời; server mới là nơi quyết.
   const [limits, setLimits] = useState({ minPlayers: 4, maxPlayers: 5 });
+  // Luật nhà đang gõ dở. Giữ dạng CHUỖI chứ không số: gõ "-" rồi mới gõ "3" là
+  // chuyện bình thường, ép về số ngay thì ô nhảy lung tung dưới tay người dùng.
+  const [rankDraft, setRankDraft] = useState<string[]>([]);
+  const [bonusDraft, setBonusDraft] = useState<BonusDraft[]>([]);
+  const [rulesError, setRulesError] = useState<string | null>(null);
 
   const applyView = useCallback((view: SessionView) => {
     setSession(view.session);
@@ -90,6 +120,40 @@ export function App() {
     [session],
   );
 
+  const activePlayers = useMemo(
+    () => (session?.players ?? []).filter((p) => p.status === "active"),
+    [session],
+  );
+
+  /**
+   * Bốc luật nhà từ server về các ô nhập — CHỈ khi luật hoặc số người đổi.
+   *
+   * Nếu nghe cả `session` thì mỗi ván ghi xong sẽ nạp lại ô đang gõ dở và xoá
+   * mất chữ người dùng vừa gõ. Chữ ký dưới đây đổi đúng lúc cần đổi: đặt lại
+   * luật, hoặc thêm/bớt người (lúc đó bảng hạng phải giãn ra cho khớp).
+   */
+  const rulesKey = session
+    ? `${activePlayers.length}|${JSON.stringify(session.scoringConfig)}`
+    : "";
+  useEffect(() => {
+    if (!session) return;
+    const points = session.scoringConfig.rankPoints ?? [];
+    setRankDraft(
+      Array.from({ length: activePlayers.length }, (_, i) =>
+        points[i] === undefined ? "" : String(points[i]),
+      ),
+    );
+    setBonusDraft(
+      (session.scoringConfig.bonuses ?? []).map((b) => ({
+        name: b.name,
+        points: String(b.points),
+        paidBy: b.paidBy,
+      })),
+    );
+    setRulesError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rulesKey]);
+
   // C — Esc để thoát khỏi lượt đang dở, không phải chờ nó tự xong.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -148,6 +212,52 @@ export function App() {
   }
 
   const id = session.id;
+  const labels = rankLabels(activePlayers.length);
+  const rankNumbers = rankDraft.map((v) => Number(v.trim()));
+  const rankFilled = rankDraft.filter((v) => v.trim() !== "").length;
+  const rankSum = rankNumbers.reduce((a, n) => a + (Number.isFinite(n) ? n : 0), 0);
+
+  /**
+   * Lưu luật nhà. Server mới là nơi QUYẾT — ở đây chỉ dịch ô nhập thành số.
+   *
+   * Xoá trắng cả hàng hạng = bỏ luật hạng (`null`), khác hẳn với `[]`. Nửa vời
+   * (điền vài ô) thì chặn tại đây, vì gửi lên cũng bị từ chối mà lại tốn một
+   * chuyến mạng để nghe cùng một câu.
+   */
+  const saveRules = async () => {
+    const cleared = rankFilled === 0;
+    if (!cleared && rankFilled !== rankDraft.length) {
+      setRulesError(`Điền đủ ${rankDraft.length} mức, từ nhất xuống bét.`);
+      return;
+    }
+    if (!cleared && rankNumbers.some((n) => !Number.isInteger(n))) {
+      setRulesError("Mỗi mức phải là một số nguyên.");
+      return;
+    }
+
+    const bonuses = bonusDraft
+      .filter((b) => b.name.trim() !== "")
+      .map((b) => ({
+        name: b.name.trim(),
+        points: Number(b.points.trim()) || 0,
+        paidBy: b.paidBy,
+      }));
+
+    setRulesError(
+      await run(() =>
+        api.setScoringConfig(id, {
+          rankPoints: cleared ? null : rankNumbers,
+          bonuses,
+        }),
+      ),
+    );
+  };
+
+  const setBonus = (index: number, patch: Partial<BonusDraft>) =>
+    setBonusDraft((prev) =>
+      prev.map((b, i) => (i === index ? { ...b, ...patch } : b)),
+    );
+
   const busy = view.state === "understanding";
   const canSpeak = isSpeechRecognitionSupported();
   const listening = view.state === "listening";
@@ -189,6 +299,111 @@ export function App() {
               {session.confirmBeforeCommit ? "Đang bật" : "Đang tắt"}
             </button>
           </div>
+          {/* Luật nhà: nhất nhì ba bét mỗi hạng một mức, thưởng là khoản cộng
+              thêm. Đặt ở đây hoặc nói ra miệng đều đi chung một cửa
+              (`update_scoring_config`), nên không có luật nào lọt được vào
+              bằng đường này mà đường kia chặn. */}
+          <div className="rules">
+            <div className="rules-head">
+              <span>Điểm theo thứ hạng</span>
+              {/* T — tổng hiện ngay dưới tay, không phải bấm Lưu mới biết sai.
+                  zeroSum vẫn là cổng cuối, ở đây chỉ nói trước cho đỡ mất công. */}
+              <span className={`rules-sum ${rankSum === 0 ? "" : "bad"}`}>
+                {rankFilled === 0
+                  ? "chưa đặt"
+                  : rankSum === 0
+                    ? "tổng 0 — cân"
+                    : `tổng ${rankSum} — không cân`}
+              </span>
+            </div>
+
+            <div className="rank-grid">
+              {rankDraft.map((value, index) => (
+                <label className="rank-cell" key={index}>
+                  <span>{labels[index]}</span>
+                  <input
+                    value={value}
+                    inputMode="numeric"
+                    aria-label={`Điểm hạng ${labels[index]}`}
+                    onChange={(e) =>
+                      setRankDraft((prev) =>
+                        prev.map((v, i) => (i === index ? e.target.value : v)),
+                      )
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+
+            <div className="rules-head">
+              <span>Thưởng</span>
+            </div>
+
+            {bonusDraft.map((bonus, index) => (
+              <div className="bonus-row" key={index}>
+                <input
+                  value={bonus.name}
+                  placeholder="tứ quý"
+                  aria-label={`Tên thưởng ${index + 1}`}
+                  onChange={(e) => setBonus(index, { name: e.target.value })}
+                />
+                <input
+                  value={bonus.points}
+                  inputMode="numeric"
+                  className="bonus-points"
+                  aria-label={`Điểm thưởng ${index + 1}`}
+                  onChange={(e) => setBonus(index, { points: e.target.value })}
+                />
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={`Cách chung thưởng ${index + 1}`}
+                  title={
+                    bonus.paidBy === "each"
+                      ? "Mỗi người còn lại chung đủ chừng đó"
+                      : "Những người còn lại chia đều chừng đó"
+                  }
+                  onClick={() =>
+                    setBonus(index, {
+                      paidBy: bonus.paidBy === "each" ? "split" : "each",
+                    })
+                  }
+                >
+                  {bonus.paidBy === "each" ? "mỗi người" : "chia đều"}
+                </button>
+                <button
+                  type="button"
+                  className="remove"
+                  aria-label={`Xoá thưởng ${index + 1}`}
+                  onClick={() =>
+                    setBonusDraft((prev) => prev.filter((_, i) => i !== index))
+                  }
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              className="ghost"
+              onClick={() =>
+                setBonusDraft((prev) => [
+                  ...prev,
+                  { name: "", points: "0", paidBy: "each" },
+                ])
+              }
+            >
+              + Thêm thưởng
+            </button>
+
+            {rulesError && <div className="warning">{rulesError}</div>}
+
+            <button type="button" className="primary" onClick={() => void saveRules()}>
+              Lưu luật nhà
+            </button>
+          </div>
+
           <button
             type="button"
             className="ghost"

@@ -46,13 +46,41 @@ class Base(BaseModel):
         return self.model_dump(mode="json", exclude_none=True, by_alias=True)
 
 
+class HouseBonus(Base):
+    """Một khoản thưởng theo luật nhà: "tứ quý" 5 điểm.
+
+    `paidBy` phân biệt hai cách chia mà bàn bài nào cũng có, và chúng cho ra
+    con số KHÁC HẲN nhau nên không được đoán:
+
+    - `each`  — mỗi người còn lại chung ĐỦ 5. Bàn 4 người: người ăn +15.
+    - `split` — 5 điểm ấy ba người kia chia nhau. Người ăn +5, mỗi người −5/3…
+      nên `points` phải chia hết cho số người còn lại, không thì từ chối.
+    """
+
+    name: str
+    points: int
+    paidBy: Literal["each", "split"] = "each"
+
+
 class ScoringConfig(Base):
-    """MVP chỉ hỗ trợ 'direct' — xem decision 0002."""
+    """MVP chỉ hỗ trợ 'direct' — xem decision 0002.
+
+    `rankPoints` và `bonuses` là LUẬT NHÀ, không phải chế độ tính điểm mới:
+    điểm vẫn vào sổ dưới dạng delta từng người, `zeroSum` vẫn là cổng cuối. Luật
+    nhà chỉ rút ngắn quãng đường từ "Nam nhất, Lan nhì" tới bốn con số đó.
+    """
 
     mode: Literal["direct"] = "direct"
     startingScore: int = 0
     zeroSum: bool = True
     allowNegative: bool = True
+    #: Điểm theo thứ hạng, từ nhất xuống bét. Dài ĐÚNG bằng số người đang chơi.
+    #:
+    #: `None` nghĩa là nhà này chưa đặt luật hạng — khác hẳn `[]`, thứ sẽ có
+    #: nghĩa là "bảng hạng cho bàn không có ai". Phân biệt được hai thứ đó là lý
+    #: do field này để None chứ không mặc định thành danh sách rỗng.
+    rankPoints: list[int] | None = None
+    bonuses: list[HouseBonus] = Field(default_factory=list)
 
 
 DEFAULT_SCORING_CONFIG = ScoringConfig()

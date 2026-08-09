@@ -102,7 +102,18 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Confirm */
+        /**
+         * Confirm
+         * @description KHÔNG tính vào hạn mức — cố ý.
+         *
+         *     Chốt là NỬA SAU của một lượt người dùng đã trả giá ở `/agent`. Chặn nó
+         *     thì người dùng kẹt giữa chừng: đề xuất treo trên màn hình mà bấm gì cũng
+         *     không được, và cách thoát duy nhất là tải lại trang.
+         *
+         *     Không sợ bị lạm dụng: chốt cần một lời gọi đang chờ, mà lời gọi đó chỉ
+         *     sinh ra từ `/agent` — nơi đã có hạn mức. Không có gì chờ thì trả 409
+         *     ngay, không tốn lượt Gemini nào.
+         */
         post: operations["confirm_api_sessions__session_id__agent_confirm_post"];
         delete?: never;
         options?: never;
@@ -413,6 +424,29 @@ export interface components {
             /** Ok */
             ok: boolean;
         };
+        /**
+         * HouseBonus
+         * @description Một khoản thưởng theo luật nhà: "tứ quý" 5 điểm.
+         *
+         *     `paidBy` phân biệt hai cách chia mà bàn bài nào cũng có, và chúng cho ra
+         *     con số KHÁC HẲN nhau nên không được đoán:
+         *
+         *     - `each`  — mỗi người còn lại chung ĐỦ 5. Bàn 4 người: người ăn +15.
+         *     - `split` — 5 điểm ấy ba người kia chia nhau. Người ăn +5, mỗi người −5/3…
+         *       nên `points` phải chia hết cho số người còn lại, không thì từ chối.
+         */
+        HouseBonus: {
+            /** Name */
+            name: string;
+            /**
+             * Paidby
+             * @default each
+             * @enum {string}
+             */
+            paidBy: "each" | "split";
+            /** Points */
+            points: number;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -557,6 +591,10 @@ export interface components {
         /**
          * ScoringConfig
          * @description MVP chỉ hỗ trợ 'direct' — xem decision 0002.
+         *
+         *     `rankPoints` và `bonuses` là LUẬT NHÀ, không phải chế độ tính điểm mới:
+         *     điểm vẫn vào sổ dưới dạng delta từng người, `zeroSum` vẫn là cổng cuối. Luật
+         *     nhà chỉ rút ngắn quãng đường từ "Nam nhất, Lan nhì" tới bốn con số đó.
          */
         ScoringConfig: {
             /**
@@ -564,12 +602,16 @@ export interface components {
              * @default true
              */
             allowNegative: boolean;
+            /** Bonuses */
+            bonuses: components["schemas"]["HouseBonus"][];
             /**
              * Mode
              * @default direct
              * @constant
              */
             mode: "direct";
+            /** Rankpoints */
+            rankPoints: number[] | null;
             /**
              * Startingscore
              * @default 0
@@ -841,7 +883,9 @@ export interface operations {
     speak_api_sessions__session_id__agent_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "x-device-id"?: string | null;
+            };
             path: {
                 session_id: string;
             };

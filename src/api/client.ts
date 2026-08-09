@@ -114,6 +114,21 @@ export const setConfirmBeforeCommit = (id: string, enabled: boolean) =>
     body: { confirm_before_commit: enabled },
   });
 
+/**
+ * Đặt luật nhà (điểm theo hạng, thưởng) từ màn Cài đặt.
+ *
+ * Cùng một cửa với `set_house_rules` của agent: nói bằng lời và bấm tay chịu
+ * đúng một bộ kiểm, nên không có đường nào đặt được luật mà đường kia bị chặn.
+ */
+export const setScoringConfig = (
+  id: string,
+  config: Partial<Session["scoringConfig"]>,
+) =>
+  call<SessionView>(`/sessions/${id}/settings`, {
+    method: "PATCH",
+    body: { scoring_config: config },
+  });
+
 /* ── Ván ──────────────────────────────────────────────────────────────── */
 
 export const recordRound = (

@@ -30,6 +30,59 @@ def base_url() -> str:
     return os.environ.get("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com")
 
 
+RANK_WORDS = ["nhất", "nhì", "ba", "tư", "năm", "sáu", "bảy"]
+
+
+def house_rules_block(context: dict) -> str:
+    """Luật nhà của phiên, viết ra thành chữ cho model đọc.
+
+    Chỉ là THÔNG TIN, không phải chốt an toàn: model biết luật thì nói chuyện
+    trôi hơn, nhưng phép tính thật nằm ở `record_ranking` và chốt "thiếu người
+    thì từ chối" nằm ở code trong `agent/tools.py`. Prompt có thể bị đổi, bị
+    quên, bị model mới hiểu khác — chốt thì không.
+    """
+    rank_points = context.get("rankPoints") or []
+    bonuses = context.get("bonuses") or []
+    count = context.get("playerCount", 0)
+    if not rank_points and not bonuses:
+        return ""
+
+    lines: list[str] = ["", "Luật nhà của bàn này:"]
+
+    if rank_points:
+        labels = RANK_WORDS[: len(rank_points)]
+        if labels:
+            labels = labels[:-1] + ["bét"]
+        table = ", ".join(
+            f"{label} {'+' if point > 0 else ''}{point}"
+            for label, point in zip(labels, rank_points)
+        )
+        lines.append(f"- Điểm theo thứ hạng: {table}")
+        if len(rank_points) != count:
+            # Thêm/bớt người giữa phiên thì bảng hạng cũ hết dùng được. Nói
+            # thẳng ra để model đi hỏi, thay vì gọi tool rồi ăn một câu từ chối.
+            lines.append(
+                f"- CHÚ Ý: bảng hạng đang đặt cho {len(rank_points)} người nhưng "
+                f"bàn đang có {count}. Chưa ghi được ván theo hạng — bảo người "
+                "dùng đặt lại bảng hạng trước."
+            )
+
+    for bonus in bonuses:
+        how = (
+            "mỗi người còn lại chung đủ chừng đó"
+            if bonus.get("paidBy") == "each"
+            else "những người còn lại chia đều chừng đó"
+        )
+        lines.append(f"- Thưởng \"{bonus.get('name')}\": {bonus.get('points')} điểm, {how}")
+
+    lines.append(
+        "Người ta chỉ nói KẾT QUẢ (\"Nam nhất, Lan nhì, Hùng ba, Tú bét\", "
+        "\"Nam ăn tứ quý\") — gọi record_ranking và để app tra bảng, ĐỪNG tự "
+        "cộng trừ rồi gọi record_round."
+    )
+    return "\n".join(lines)
+
+
 def system_prompt(context: dict) -> str:
     players = context.get("players") or []
     me = context.get("mePlayer")
@@ -61,6 +114,16 @@ QUAN TRỌNG — tổng điểm mỗi ván phải bằng 0:
         if zero_sum
         else ""
     )
+    rules_block = house_rules_block(context)
+    # Không phải lời khuyên lịch sự — code ở `agent/tools.py` từ chối thẳng ván
+    # thiếu người. Viết ra đây để model đi hỏi TRƯỚC, thay vì gọi tool, ăn một
+    # câu từ chối, rồi tốn thêm một lượt Gemini nữa mới hỏi.
+    coverage_block = """
+Thiếu một người là KHÔNG ghi được:
+- Ván phải có điểm của ĐỦ mọi người đang chơi, kể cả người 0 điểm.
+- Ai không được nhắc tên thì HỎI LẠI bằng chữ. Không được tự cho họ 0 điểm chỉ
+  vì không nghe thấy tên — con số đó vào sổ và không ai biết để mà cãi."""
+
     confirm_block = (
         """
 App tự hỏi xác nhận trước khi ghi — bạn KHÔNG cần hỏi "đúng không?" cho điều mình
@@ -88,6 +151,9 @@ Hiểu tiếng Việt:
 - "ăn", "thắng", "được" = điểm dương. "chung", "thua", "đền", "mất" = điểm âm.
 - "ba người kia", "mấy người còn lại", "cả làng" = những người không được nhắc tên.
 - Tên nghe được có thể sai chính tả do nhận dạng giọng nói; khớp gần đúng là được.
+- "nhất, nhì, ba, bét" = thứ hạng trong ván, không phải điểm.
+{rules_block}
+{coverage_block}
 {zero_sum_block}
 {confirm_block}
 Chỉ trả lời bằng tiếng Việt có dấu."""

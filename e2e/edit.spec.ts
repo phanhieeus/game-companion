@@ -119,17 +119,22 @@ test("ván đã sửa có dấu, bấm vào xem được trước/sau", async ({
 test("nhật ký ghi cả ván nói bằng giọng lẫn ván nhập tay", async ({ page }) => {
   await startSession(page);
 
-  // Ván 1 bằng giọng nói.
+  // Ván 1 bằng giọng nói. Phải đủ cả bốn người: agent không được ghi ván bỏ
+  // sót ai (C-030).
   await scriptAgent(page, {
-    "Nam ăn 4 của Hùng": recordThenSay(record(["Nam", 4], ["Hùng", -4])),
+    "Nam ăn 4, ba người kia chung": recordThenSay(
+      record(["Nam", 3], ["Hùng", -1], ["Lan", -1], ["Tú", -1]),
+    ),
   });
-  await say(page, "Nam ăn 4 của Hùng");
+  await say(page, "Nam ăn 4, ba người kia chung");
   await commitRound(page);
 
   // Sửa nó bằng tay → nhật ký phải phân biệt được nguồn.
   await page.locator(".rounds-table tbody tr").first().locator("td.tap").first().click();
   await page.getByLabel("Điểm của Nam").fill("6");
-  await page.getByLabel("Điểm của Hùng").fill("-6");
+  await page.getByLabel("Điểm của Hùng").fill("-2");
+  await page.getByLabel("Điểm của Lan").fill("-2");
+  await page.getByLabel("Điểm của Tú").fill("-2");
   await page.getByRole("button", { name: "Lưu", exact: true }).click();
 
   await page.getByRole("button", { name: "Lịch sử ván 1" }).click();

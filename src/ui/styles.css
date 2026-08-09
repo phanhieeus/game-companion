@@ -100,6 +100,87 @@ button:disabled { cursor: not-allowed; }
   font-size: var(--t-sm);
 }
 
+/* ══════════ luật nhà (C-030) ══════════ */
+
+.rules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s3);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.rules-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2);
+  font-size: var(--t-sm);
+  color: var(--text-faint);
+}
+
+.rules-sum { font-variant-numeric: tabular-nums; }
+.rules-sum.bad { color: var(--warn); font-weight: 650; }
+
+/* Bốn tới năm ô hạng phải vừa MỘT HÀNG ở 360px: xuống dòng thì "bét" trôi khỏi
+   tầm mắt và người ta không còn đọc được cả bảng như một luật. */
+.rank-grid { display: flex; gap: var(--s2); }
+
+.rank-cell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  font-size: var(--t-xs);
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.rank-cell input {
+  min-width: 0;
+  min-height: var(--tap);
+  padding-inline: var(--s1);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.bonus-row { display: flex; gap: var(--s2); align-items: center; }
+
+.bonus-row input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--tap);
+  padding-inline: var(--s2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.bonus-row .bonus-points {
+  flex: 0 0 3.5rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.bonus-row .icon-button { white-space: nowrap; font-size: var(--t-xs); }
+
+.bonus-row .remove {
+  min-width: var(--tap);
+  min-height: var(--tap);
+  color: var(--text-faint);
+  border-radius: var(--r-sm);
+}
+
 /* ══════════ panel head ══════════ */
 
 .panel { display: flex; flex-direction: column; gap: var(--s2); }
