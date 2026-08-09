@@ -13,6 +13,9 @@ Lối rẽ file/Postgres giống hệt kho phiên (ADR 14 sửa ở C-017) và k
 Cả kho ghi TRỌN GÓI cửa sổ hội thoại vào một hàng cho mỗi phiên. Cửa sổ tối đa
 12 lượt và luôn đọc/ghi cả cụm (`trim_window` cắt trên cả danh sách), nên tách
 mỗi lượt một hàng chỉ thêm việc mà không thêm khả năng nào.
+
+Hình dạng một lượt do `StoredTurn` giữ, chứ không bốc field bằng tay — cùng lý
+do `domain/models.py` đã nêu cho cả repo.
 """
 
 from __future__ import annotations
@@ -20,54 +23,108 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 from psycopg import connect
 from psycopg.rows import tuple_row
+from typing_extensions import TypeAliasType
 
 from ..agent.types import AgentMessage, ToolCall
+from ..domain.models import Base
+
+#: Đúng những gì JSON diễn tả được, không hơn.
+#:
+#: `AgentMessage.result` trong bộ nhớ khai là `Any` vì tool trả về gì cũng được.
+#: Nhưng ở CỬA GHI thì `Any` là một lời hứa suông: một `datetime` hay một object
+#: thường lọt qua đây sẽ chết trong `json.dumps`, và chỗ đó thì đang nuốt lỗi —
+#: kết quả là phiên ấy âm thầm mất cả cửa sổ hội thoại mà không ai biết vì sao.
+#: Khai kiểu ra để Pydantic chặn ngay tại một chỗ, có tên, đọc được.
+#:
+#: Phải dùng `TypeAliasType` chứ không viết `Json = None | bool | ... |
+#: list["Json"]`: alias đệ quy kiểu đó làm Pydantic 2.13 dựng schema tới khi
+#: tràn stack (đã thử).
+Json = TypeAliasType(
+    "Json", "None | bool | int | float | str | list[Json] | dict[str, Json]"
+)
 
 
-def encode(message: AgentMessage) -> dict:
-    """Một lượt → JSON.
+class StoredCall(Base):
+    """Lời gọi tool như lúc cất xuống kho.
 
-    `thought_signature` PHẢI đi cùng: thiếu nó thì Gemini 3.x từ chối cả request
-    (xem `types.ToolCall`). Cất một hội thoại rồi đọc lại mà rơi mất chữ ký thì
-    lỗi đó quay lại đúng ở lượt đầu sau khi khởi động lại.
+    `thought_signature` PHẢI đi trọn vẹn: thiếu nó thì Gemini 3.x từ chối cả
+    request (xem `types.ToolCall`). Cất một hội thoại rồi đọc lại mà rơi mất chữ
+    ký thì lỗi đó quay lại đúng ở lượt đầu sau khi khởi động lại.
     """
-    data: dict = {"role": message.role}
-    if message.text is not None:
-        data["text"] = message.text
-    if message.name is not None:
-        data["name"] = message.name
-    if message.result is not None:
-        data["result"] = message.result
-    if message.call is not None:
-        data["call"] = {
-            "name": message.call.name,
-            "args": message.call.args or {},
-            "thought_signature": message.call.thought_signature,
-        }
-    return data
+
+    name: str
+    args: dict[str, Json] = {}
+    thought_signature: str | None = None
 
 
-def decode(raw: dict) -> AgentMessage:
-    call = raw.get("call")
-    return AgentMessage(
-        role=raw["role"],
-        text=raw.get("text"),
-        name=raw.get("name"),
-        result=raw.get("result"),
-        call=(
-            ToolCall(
-                name=call["name"],
-                args=call.get("args") or {},
-                thought_signature=call.get("thought_signature"),
-            )
-            if call
-            else None
-        ),
-    )
+class StoredTurn(Base):
+    """Một lượt hội thoại như lúc cất xuống kho.
+
+    Dùng Pydantic vì cùng lý do `domain/models.py` đã nêu: dữ liệu đọc lên từ
+    JSON được kiểm hình dạng NGAY TẠI CỬA thay vì nổ ở giữa. Chỗ này còn thêm
+    một lý do nữa — nó cũng là cửa GHI, xem chú thích ở `Json`.
+    """
+
+    role: Literal["user", "model", "tool"]
+    text: str | None = None
+    name: str | None = None
+    result: Json = None
+    call: StoredCall | None = None
+
+    @classmethod
+    def of(cls, message: AgentMessage) -> StoredTurn:
+        return cls.model_validate(
+            {
+                "role": message.role,
+                "text": message.text,
+                "name": message.name,
+                "result": message.result,
+                "call": (
+                    {
+                        "name": message.call.name,
+                        "args": message.call.args or {},
+                        "thought_signature": message.call.thought_signature,
+                    }
+                    if message.call
+                    else None
+                ),
+            }
+        )
+
+    def to_message(self) -> AgentMessage:
+        return AgentMessage(
+            role=self.role,
+            text=self.text,
+            name=self.name,
+            result=self.result,
+            call=(
+                ToolCall(
+                    name=self.call.name,
+                    args=self.call.args,
+                    thought_signature=self.call.thought_signature,
+                )
+                if self.call
+                else None
+            ),
+        )
+
+
+def to_rows(turns: list[AgentMessage]) -> list[dict]:
+    """Cửa ghi, dùng chung cho cả ba kho.
+
+    Dựng TOÀN BỘ payload trước khi động vào chỗ cất: một lượt sai hình dạng nổ ở
+    đây, lúc kho còn chưa bị mở ra. Nhờ vậy hỏng của phiên này không lây sang
+    phiên khác trong cùng file/cùng bảng.
+    """
+    return [StoredTurn.of(t).dump() for t in turns]
+
+
+def to_messages(rows: list[dict]) -> list[AgentMessage]:
+    return [StoredTurn.model_validate(r).to_message() for r in rows]
 
 
 class TurnStore(Protocol):
@@ -83,16 +140,21 @@ class TurnStore(Protocol):
 
 
 class InMemoryTurnStore:
-    """Không cất gì xuống đâu cả — cho test và cho lúc chưa cấu hình chỗ lưu."""
+    """Không cất xuống đâu cả — cho test và cho lúc chưa cấu hình chỗ lưu.
+
+    Vẫn đi qua đúng cửa `to_rows`/`to_messages` dù chẳng cần tuần tự hoá gì:
+    kho dùng lúc test mà dễ tính hơn kho chạy thật thì test không còn nói được
+    gì về chuyện gì sẽ xảy ra trên production.
+    """
 
     def __init__(self) -> None:
-        self._by_session: dict[str, list[AgentMessage]] = {}
+        self._by_session: dict[str, list[dict]] = {}
 
     def read(self, session_id: str) -> list[AgentMessage]:
-        return list(self._by_session.get(session_id, []))
+        return to_messages(self._by_session.get(session_id, []))
 
     def write(self, session_id: str, turns: list[AgentMessage]) -> None:
-        self._by_session[session_id] = list(turns)
+        self._by_session[session_id] = to_rows(turns)
 
     def clear(self, session_id: str) -> None:
         self._by_session.pop(session_id, None)
@@ -119,13 +181,16 @@ class FileTurnStore:
 
     def read(self, session_id: str) -> list[AgentMessage]:
         try:
-            return [decode(t) for t in self._load().get(session_id, [])]
+            return to_messages(self._load().get(session_id, []))
         except Exception:
+            # Méo/thiếu field thì coi như rỗng — chính sách cũ, chỉ khác là giờ
+            # Pydantic phát hiện ngay ở cửa chứ không để nó nổ ở giữa vòng ReAct.
             return []
 
     def write(self, session_id: str, turns: list[AgentMessage]) -> None:
+        rows = to_rows(turns)
         data = self._load()
-        data[session_id] = [encode(t) for t in turns]
+        data[session_id] = rows
         self._save(data)
 
     def clear(self, session_id: str) -> None:
@@ -156,17 +221,19 @@ class PgTurnStore:
             row = conn.execute(
                 "SELECT data FROM agent_turns WHERE session_id = %s", (session_id,)
             ).fetchone()
-        return [decode(t) for t in (row[0] if row else [])]
+        return to_messages(row[0] if row else [])
 
     def write(self, session_id: str, turns: list[AgentMessage]) -> None:
+        # Dựng payload TRƯỚC khi mở kết nối: giá trị sai hình dạng không được
+        # phép chết ở giữa `json.dumps` sau khi đã đụng vào CSDL.
+        payload = json.dumps(to_rows(turns), ensure_ascii=False)
         with self._conn() as conn:
             conn.execute(
                 """
                 INSERT INTO agent_turns (session_id, data) VALUES (%s, %s)
                 ON CONFLICT (session_id) DO UPDATE SET data = EXCLUDED.data
                 """,
-                (session_id, json.dumps([encode(t) for t in turns],
-                                        ensure_ascii=False)),
+                (session_id, payload),
             )
 
     def clear(self, session_id: str) -> None:

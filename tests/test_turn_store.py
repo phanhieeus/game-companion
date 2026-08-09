@@ -11,20 +11,30 @@ lại từ cùng thư mục dữ liệu thì vẫn gửi lên đúng hội tho�
 from __future__ import annotations
 
 import importlib
+import json
 import os
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from api.agent.memory import is_well_formed
 from api.agent.types import AgentMessage, ModelReply, ToolCall
-from api.repository.turns import FileTurnStore, InMemoryTurnStore, decode, encode
+from api.repository.turns import (
+    FileTurnStore,
+    InMemoryTurnStore,
+    StoredTurn,
+    to_messages,
+    to_rows,
+)
 
 PLAYERS = [{"name": "Nam"}, {"name": "Hùng"}, {"name": "Lan"}, {"name": "Tú"}]
 
 
 class TestMaHoaMotLuot:
     def test_lai_di_lai_ve_khong_mat_gi(self):
+        """Vòng cất-rồi-đọc qua `StoredTurn`: cả lượt có `call` lẫn lượt có
+        `result`, cả giá trị lồng nhau lẫn `null` nằm bên trong."""
         goc = [
             AgentMessage(role="user", text="Lan thắng 3 điểm"),
             AgentMessage(
@@ -35,10 +45,21 @@ class TestMaHoaMotLuot:
                     thought_signature="chu-ky-cua-gemini",
                 ),
             ),
-            AgentMessage(role="tool", name="record_round", result={"ok": True}),
+            AgentMessage(
+                role="tool",
+                name="record_round",
+                result={"ok": True, "rows": [{"name": "Lan", "total": 3}],
+                        "ghiChu": None, "ti_le": 1.5},
+            ),
             AgentMessage(role="model", text="Ghi rồi."),
         ]
-        assert [decode(encode(m)) for m in goc] == goc
+        assert to_messages(to_rows(goc)) == goc
+
+    def test_null_nam_trong_result_khong_bi_nuot(self):
+        """`Base.dump()` bỏ field None của MODEL, không được đụng vào ruột
+        `result` — bỏ mất một khoá là sửa dữ liệu tool đã trả về."""
+        goc = AgentMessage(role="tool", name="x", result={"a": None, "b": [None, 1]})
+        assert to_rows([goc])[0]["result"] == {"a": None, "b": [None, 1]}
 
     def test_giu_thought_signature(self):
         """Thiếu chữ ký là Gemini 3.x từ chối CẢ request (400).
@@ -49,7 +70,141 @@ class TestMaHoaMotLuot:
         goi = AgentMessage(
             role="model", call=ToolCall(name="get_scoreboard", thought_signature="abc")
         )
-        assert decode(encode(goi)).call.thought_signature == "abc"
+        assert to_messages(to_rows([goi]))[0].call.thought_signature == "abc"
+
+    def test_kieu_nguyen_thuy_khong_bi_ep_lech(self):
+        """`True` không được thành `1`, `2.0` không được thành `2`."""
+        goc = AgentMessage(role="tool", name="x", result=[True, 1, 2.0, "3"])
+        assert to_rows([goc])[0]["result"] == [True, 1, 2.0, "3"]
+        assert to_rows([goc])[0]["result"][0] is True
+
+
+class TestBatOCuaGhi:
+    """Điểm yếu cũ: `result` khai `Any` nên giá trị không JSON hoá được lọt tới
+    `json.dumps`, chết ở đó, và bị chính sách nuốt lỗi nuốt mất — phiên ấy âm
+    thầm mất cả cửa sổ hội thoại mà không ai biết vì sao."""
+
+    def test_datetime_bi_chan_ngay_tai_cua(self):
+        import datetime
+
+        with pytest.raises(ValidationError):
+            to_rows([AgentMessage(role="tool", name="x",
+                                  result={"at": datetime.datetime.now()})])
+
+    def test_object_thuong_bi_chan_ngay_tai_cua(self):
+        class KhongPhaiJson:
+            pass
+
+        with pytest.raises(ValidationError):
+            to_rows([AgentMessage(role="tool", name="x", result=KhongPhaiJson())])
+
+    def test_args_cua_tool_cung_di_qua_cung_cua(self):
+        import datetime
+
+        with pytest.raises(ValidationError):
+            to_rows(
+                [
+                    AgentMessage(
+                        role="model",
+                        call=ToolCall(name="x", args={"khi": datetime.date.today()}),
+                    )
+                ]
+            )
+
+    @pytest.mark.parametrize("kieu_kho", ["ram", "file"])
+    def test_phien_khac_khong_hong_lay(self, kieu_kho, tmp_path):
+        """Ghi hỏng phải nổ TRƯỚC khi động vào chỗ cất."""
+        import datetime
+
+        kho = (
+            InMemoryTurnStore()
+            if kieu_kho == "ram"
+            else FileTurnStore(tmp_path / "turns.json")
+        )
+        kho.write("phien-B", [AgentMessage(role="user", text="B vẫn ổn")])
+        kho.write("phien-A", [AgentMessage(role="user", text="A lượt cũ")])
+
+        with pytest.raises(ValidationError):
+            kho.write(
+                "phien-A",
+                [
+                    AgentMessage(role="user", text="A lượt cũ"),
+                    AgentMessage(role="tool", name="x",
+                                 result=datetime.datetime.now()),
+                ],
+            )
+
+        assert [t.text for t in kho.read("phien-B")] == ["B vẫn ổn"]
+        # Và phiên A cũng chỉ mất đúng lượt sai, không mất cửa sổ đã cất.
+        assert [t.text for t in kho.read("phien-A")] == ["A lượt cũ"]
+
+
+class TestDocPhaiDuLieuMeo:
+    """Chính sách không đổi: đọc hỏng thì coi như rỗng. Pydantic chỉ đổi CHỖ lỗi
+    bị phát hiện, không đổi cách xử lý nó."""
+
+    @pytest.mark.parametrize(
+        "meo",
+        [
+            [{"role": "nguoi-la"}],  # role không có thật
+            [{"text": "thiếu role"}],  # thiếu field bắt buộc
+            [{"role": "model", "call": {"args": {}}}],  # call thiếu tên tool
+            ["không phải object"],
+            "cả file sai kiểu",
+        ],
+        ids=["role-la", "thieu-role", "call-thieu-ten", "khong-phai-object", "sai-kieu"],
+    )
+    def test_file_meo_thi_rong_chu_khong_no(self, meo, tmp_path):
+        duong = tmp_path / "turns.json"
+        duong.write_text(json.dumps({"phien-A": meo}), "utf-8")
+        assert FileTurnStore(duong).read("phien-A") == []
+
+    def test_meo_o_phien_nay_khong_lam_phien_kia_cam(self, tmp_path):
+        duong = tmp_path / "turns.json"
+        duong.write_text(
+            json.dumps(
+                {
+                    "phien-A": [{"role": "nguoi-la"}],
+                    "phien-B": [{"role": "user", "text": "vẫn đọc được"}],
+                }
+            ),
+            "utf-8",
+        )
+        kho = FileTurnStore(duong)
+        assert kho.read("phien-A") == []
+        assert [t.text for t in kho.read("phien-B")] == ["vẫn đọc được"]
+
+    def test_hinh_dang_tren_dia_khong_doi(self, tmp_path):
+        """Không được tự đẻ ra một migration: đọc đúng thứ bản trước đã ghi.
+
+        Bản trước ghi `thought_signature: null` tường minh; `Base.dump()` bỏ
+        field None nên bản này không ghi nữa — nhưng đọc thì vẫn phải nhận cả
+        hai dạng.
+        """
+        duong = tmp_path / "turns.json"
+        duong.write_text(
+            json.dumps(
+                {
+                    "phien-A": [
+                        {"role": "user", "text": "Lan thắng"},
+                        {
+                            "role": "model",
+                            "call": {"name": "record_round", "args": {},
+                                     "thought_signature": None},
+                        },
+                    ]
+                }
+            ),
+            "utf-8",
+        )
+        turns = FileTurnStore(duong).read("phien-A")
+        assert [t.role for t in turns] == ["user", "model"]
+        assert turns[1].call.name == "record_round"
+        assert turns[1].call.thought_signature is None
+
+    def test_model_cung_doc_duoc_bang_model_validate(self):
+        turn = StoredTurn.model_validate({"role": "user", "text": "xin chào"})
+        assert turn.to_message() == AgentMessage(role="user", text="xin chào")
 
 
 class TestKhoHoiThoai:
