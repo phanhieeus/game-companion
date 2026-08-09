@@ -123,6 +123,23 @@ class TestNoiDung:
         assert stats["steps"]["max"] >= 1
         assert stats["latencyMs"]["p50"] >= 0
 
+    def test_bao_so_phien_dang_giu_trong_RAM(self, open_client):
+        """Con số này không suy ngược ra được từ vết đã lưu (C-029).
+
+        Kho vết nhớ cả phiên đã tắt từ lâu, RAM thì chỉ giữ phiên chưa bị dọn.
+        Không hiện ra đây thì không ai biết server đang ôm bao nhiêu — và đặt
+        trần cho một con số chưa từng đo là đoán.
+        """
+        for _ in range(3):
+            self._session_with_turn(open_client)
+
+        stats = open_client.get(
+            "/api/admin/stats", headers={"X-Admin-Token": TOKEN}
+        ).json()
+
+        assert stats["sessionsInMemory"]["count"] == 3
+        assert stats["sessionsInMemory"]["limit"] > 0
+
     def test_duong_dan_api_khong_co_that_tra_404_json(self, open_client):
         """Route SPA từng nuốt mọi /api/* không tồn tại và trả HTML 200.
 

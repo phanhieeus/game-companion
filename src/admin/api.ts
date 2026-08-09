@@ -80,6 +80,14 @@ export interface Stats {
   guardrails: Record<string, number>;
   steps: { avg: number; max: number; distribution: Record<string, number> };
   latencyMs: { p50: number; p95: number; max: number };
+  /**
+   * Số phiên agent server đang giữ trong RAM, và trần của nó (C-029).
+   *
+   * Không suy ra được từ danh sách phiên: kho vết nhớ cả phiên đã tắt từ lâu,
+   * còn RAM thì chỉ giữ những phiên chưa bị dọn. Hai con số khác nhau, và cái
+   * đáng lo là cái này.
+   */
+  sessionsInMemory: { count: number; limit: number };
 }
 
 export const listSessions = () =>

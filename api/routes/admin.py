@@ -15,6 +15,8 @@ import os
 from fastapi import APIRouter, Header, Query
 from fastapi.responses import JSONResponse
 
+from .agent import SESSIONS
+
 
 def admin_token() -> str | None:
     return os.environ.get("ADMIN_TOKEN") or None
@@ -82,6 +84,16 @@ def build_admin_router(trace_store, repo) -> APIRouter:
     ):
         if not ok_token(x_admin_token, token):
             return denied()
-        return trace_store.stats()
+        data = trace_store.stats()
+        # Phiên agent nằm trong RAM của tiến trình, không nằm ở kho vết, nên
+        # không có cách nào đếm ngược ra được từ dữ liệu đã lưu — phải hỏi thẳng
+        # chỗ giữ nó. Con số này là lý do C-029 tồn tại: trước đó không ai biết
+        # server đang ôm bao nhiêu phiên, kể cả người viết ra nó.
+        SESSIONS.sweep(lambda session_id: repo.get(session_id) is not None)
+        data["sessionsInMemory"] = {
+            "count": len(SESSIONS),
+            "limit": SESSIONS.limit,
+        }
+        return data
 
     return router
