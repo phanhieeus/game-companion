@@ -11,6 +11,7 @@ import pytest
 
 from api.agent.memory import MAX_TURNS, create_memory, is_well_formed, trim_window
 from api.agent.types import AgentMessage, ToolCall
+from api.repository.turns import InMemoryTurnStore
 
 
 def user(text: str) -> AgentMessage:
@@ -103,3 +104,49 @@ class TestQuaMemory:
         turns = memory.turns()
         assert len(turns) >= 4
         assert any(t.role == "tool" for t in turns)
+
+
+class TestDocLaiTuKho:
+    """C-027 đưa hội thoại xuống kho, nên mép trái phải hợp lệ cả khi ĐỌC LẠI.
+
+    Trước đây `turns` chỉ sống trong RAM nên chỗ duy nhất cắt sai là lúc ghi.
+    Giờ danh sách có thể tới từ một tiến trình khác, và một `functionResponse`
+    mồ côi sẽ mồ côi ngay ở lượt ĐẦU sau khi khởi động lại — lỗi 400 của C-026
+    quay lại ở dạng khó lần hơn vì không cần nói tới 12 lượt mới hiện ra.
+    """
+
+    def test_doc_lai_sau_khi_khoi_dong_lai_van_hop_le(self):
+        kho = InMemoryTurnStore()
+        memory = create_memory("phien-1", turn_store=kho)
+        for i in range(30):
+            for message in one_turn(i):
+                memory.append_turn(message)
+
+        # Tiến trình mới, cùng kho: đúng thứ xảy ra sau redeploy.
+        sau_restart = create_memory("phien-1", turn_store=kho)
+        assert is_well_formed(sau_restart.turns())
+        assert sau_restart.turns()[0].role == "user"
+        assert len(sau_restart.turns()) <= MAX_TURNS
+
+    def test_kho_giu_cua_so_mo_coi_thi_cat_lai_khi_doc(self):
+        """Bản ghi cũ/hỏng không được biến thành request Gemini từ chối."""
+        kho = InMemoryTurnStore()
+        kho.write("phien-1", [obs(), says("đáp"), user("hỏi tiếp"), says("đáp 2")])
+
+        turns = create_memory("phien-1", turn_store=kho).turns()
+        assert is_well_formed(turns)
+        assert turns and turns[0].role == "user"
+
+    def test_kho_meo_o_giua_thi_coi_nhu_rong(self):
+        """`trim_window` chỉ sửa được mép trái; méo ở giữa thì thà bắt đầu lại."""
+        kho = InMemoryTurnStore()
+        kho.write("phien-1", [user("hỏi"), says("đáp"), obs()])
+        assert create_memory("phien-1", turn_store=kho).turns() == []
+
+    def test_noi_tiep_sau_khi_khoi_dong_lai_khong_lam_hong_hinh_dang(self):
+        kho = InMemoryTurnStore()
+        for i in range(20):
+            memory = create_memory("phien-1", turn_store=kho)
+            for message in one_turn(i):
+                memory.append_turn(message)
+                assert is_well_formed(create_memory("phien-1", turn_store=kho).turns())

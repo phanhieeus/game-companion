@@ -41,24 +41,31 @@ if DATABASE_URL:
     from .repository.postgres import PgSessionRepository
 
     from .repository.traces import PgTraceStore
+    from .repository.turns import PgTurnStore
 
     repo = PgSessionRepository(DATABASE_URL)
     fact_store = PgFactStore(DATABASE_URL)
     trace_store = PgTraceStore(DATABASE_URL)
+    # Hội thoại cũng xuống CSDL từ C-027: để trong RAM thì redeploy là agent mất
+    # ngữ cảnh trong khi bảng điểm và luật nhà còn nguyên — trông như nó tự dưng
+    # ngu đi chứ không như vừa khởi động lại.
+    turn_store = PgTurnStore(DATABASE_URL)
     print("[api] kho: Postgres", file=sys.stderr, flush=True)
 else:
     from .repository.traces import FileTraceStore
+    from .repository.turns import FileTurnStore
 
     repo = FileSessionRepository(DATA_DIR / "sessions.json")
     fact_store = FileFactStore(DATA_DIR / "memory.json")
     trace_store = FileTraceStore(DATA_DIR / "traces.json")
+    turn_store = FileTurnStore(DATA_DIR / "turns.json")
     print(f"[api] kho: file trong {DATA_DIR}", file=sys.stderr, flush=True)
 
 tools = create_tools(repo)
 
 app = FastAPI(title="Ghi điểm", version="1.0.0")
 
-agent_router = build_agent_router(tools, repo, fact_store, trace_store)
+agent_router = build_agent_router(tools, repo, fact_store, trace_store, turn_store)
 app.include_router(build_session_router(tools, repo), prefix="/api/sessions")
 app.include_router(agent_router, prefix="/api/sessions")
 
@@ -105,6 +112,10 @@ if os.environ.get("E2E_RESET") == "1":
     @app.post("/api/test/reset")
     def reset() -> dict:
         for session in repo.list():
+            # Trí nhớ khoá theo phiên (C-027) nên xoá phiên mà không dọn nhớ là
+            # để lại rác không ai với tới được nữa.
+            fact_store.clear(session.id)
+            turn_store.clear(session.id)
             repo.delete(session.id)
         # Dọn cả hạn mức: mỗi test bắt đầu từ con số không, nếu không thì test
         # chạy sau bị test chạy trước ăn mất phần.

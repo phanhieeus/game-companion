@@ -15,7 +15,7 @@ from fastapi import APIRouter, Body, Header, Request
 
 from ..agent.gemini import call_gemini
 from ..agent.loop import resume_agent, run_agent
-from ..agent.memory import FactStore, create_memory
+from ..agent.memory import FactStore, Memory, create_memory
 from ..agent.tools import tool_declarations
 from ..agent.types import AgentMessage, ToolCall, ToolContext
 from ..domain.scoring import compute_scoreboard
@@ -23,6 +23,7 @@ from ..guardrails import GuardrailHit, RateLimiter, check_utterance
 from ..tracing import Tracer
 from ..agent.gemini import system_prompt
 from ..repository.base import SessionRepository
+from ..repository.turns import InMemoryTurnStore, TurnStore
 from ..tools import Tools
 from .sessions import ERRORS, error_response
 from .schemas import AgentReply, ErrorBody
@@ -32,7 +33,7 @@ from .schemas import AgentReply, ErrorBody
 class AgentSession:
     """Những gì server nhớ giữa hai request của cùng một phiên."""
 
-    memory: object
+    memory: Memory
     #: Lời gọi đang chờ người chốt — chốt chặn HITL sống ở đây (ADR 12).
     pending: ToolCall | None = None
     #: Ý định đổi tuỳ chọn hiển thị, gom lại để trả về cho client tự áp.
@@ -49,8 +50,13 @@ def build_agent_router(
     repo: SessionRepository,
     fact_store: FactStore,
     trace_store=None,
+    turn_store: TurnStore | None = None,
 ) -> APIRouter:
     router = APIRouter()
+    turns_kho: TurnStore = turn_store or InMemoryTurnStore()
+    # `sessions` giờ chỉ giữ thứ KHÔNG cất được: lời gọi đang chờ chốt và mấy ý
+    # định UI của lượt vừa rồi. Trí nhớ đã xuống kho nên mất dict này không còn
+    # làm agent quên gì nữa (C-027).
     sessions: dict[str, AgentSession] = {}
     # Mỗi lượt tiêu MỘT lượt gọi Gemini bằng key của operator, trên một URL công
     # khai. Không có lớp này thì ai biết địa chỉ cũng đốt sạch quota (C-021).
@@ -84,8 +90,28 @@ def build_agent_router(
 
     def state_of(session_id: str) -> AgentSession:
         if session_id not in sessions:
-            sessions[session_id] = AgentSession(memory=create_memory(fact_store))
+            sessions[session_id] = AgentSession(
+                memory=create_memory(session_id, fact_store, turns_kho)
+            )
         return sessions[session_id]
+
+    def purge_if_ended(session_id: str, state: AgentSession) -> None:
+        """Phiên vừa kết thúc thì dọn cả hai tầng nhớ.
+
+        Dọn ở ĐÂY chứ không ở chỗ `end_session` chạy, vì phiên kết thúc bằng hai
+        đường — tool của agent và nút "kết thúc" gọi thẳng `/end` — mà cả hai
+        đều đi qua tool layer chứ không biết kho nhớ tồn tại. Route agent là chỗ
+        gần nhất vừa cầm `memory` vừa đọc được trạng thái phiên sau khi lượt
+        chạy xong.
+
+        Đổi lại, phiên kết thúc qua `/end` chỉ được dọn ở lần nói tiếp theo (nếu
+        có). Đó là rác nằm lại, không phải rò rỉ trí nhớ: phiên đã kết thúc thì
+        không ai đọc lại được nữa vì `state_of` luôn khoá theo đúng id đó.
+        """
+        session = repo.get(session_id)
+        if session is None or session.status != "active":
+            state.memory.purge()
+            sessions.pop(session_id, None)
 
     def context_for(
         session_id: str, state: AgentSession, tracer: Tracer | None = None
@@ -204,7 +230,9 @@ def build_agent_router(
         if result.outcome.get("type") == "confirm":
             state.pending = result.outcome["call"]
 
-        return reply(session_id, state, result)
+        answer = reply(session_id, state, result)
+        purge_if_ended(session_id, state)
+        return answer
 
     @router.post(
         "/{session_id}/agent/confirm",
@@ -249,7 +277,9 @@ def build_agent_router(
         if result.outcome.get("type") == "confirm":
             state.pending = result.outcome["call"]
 
-        return reply(session_id, state, result)
+        answer = reply(session_id, state, result)
+        purge_if_ended(session_id, state)
+        return answer
 
     router.limiter = limiter  # type: ignore[attr-defined]  # cho test đặt lại
     return router

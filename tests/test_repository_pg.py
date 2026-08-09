@@ -101,14 +101,9 @@ def test_ghi_de_dung_hang_khong_tao_hang_moi(repo):
     assert len([s for s in repo.list() if s.id == sid]) == 1
 
 
-def test_nho_lau_song_qua_ket_noi_moi(repo):
-    from api.agent.pgmemory import PgFactStore
-    from api.agent.memory import create_memory
-
-    store = PgFactStore(DSN)
-    store.write([])
-    create_memory(store).remember("Nhà này tính 3 điểm cho ù")
-
-    again = create_memory(PgFactStore(DSN))
-    assert [f.text for f in again.facts()] == ["Nhà này tính 3 điểm cho ù"]
-    PgFactStore(DSN).write([])
+# `test_nho_lau_song_qua_ket_noi_moi` từng nằm ở đây. Từ C-027 nhớ lâu khoá theo
+# phiên nên nó không còn chữ ký cũ để gọi, và điều nó canh — nhớ lâu đọc lại
+# được qua một kết nối mới — giờ do
+# `tests/test_turn_store.py::TestTrenPostgres::
+#  test_hai_tang_deu_song_qua_ket_noi_moi_va_deu_khoa_theo_phien` canh, kèm cả
+# tầng hội thoại lẫn chuyện hai phiên không thấy nhau.
