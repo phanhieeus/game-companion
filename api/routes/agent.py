@@ -197,20 +197,19 @@ def build_agent_router(
     def purge_if_ended(session_id: str, state: AgentSession) -> None:
         """Phiên vừa kết thúc thì dọn cả hai tầng nhớ.
 
-        Dọn ở ĐÂY chứ không ở chỗ `end_session` chạy, vì phiên kết thúc bằng hai
-        đường — tool của agent và nút "kết thúc" gọi thẳng `/end` — mà cả hai
-        đều đi qua tool layer chứ không biết kho nhớ tồn tại. Route agent là chỗ
-        gần nhất vừa cầm `memory` vừa đọc được trạng thái phiên sau khi lượt
-        chạy xong.
-
-        Đổi lại, phiên kết thúc qua `/end` chỉ được dọn ở lần nói tiếp theo (nếu
-        có). Đó là rác nằm lại, không phải rò rỉ trí nhớ: phiên đã kết thúc thì
-        không ai đọc lại được nữa vì `state_of` luôn khoá theo đúng id đó.
+        Đây là đường dọn THỨ HAI, phòng khi phiên chết mà không đi qua
+        `Tools.end_session` — bị xoá thẳng khỏi kho chẳng hạn. Đường CHÍNH là
+        móc `on_session_ended` nối ở `api/main.py`: nó nằm đúng chỗ cả hai lối
+        kết thúc phiên cùng đi qua, nên dọn ngay chứ không đợi lượt nói kế tiếp
+        (mà phiên vừa kết thúc thì rất có thể không còn lượt nào nữa).
         """
         session = repo.get(session_id)
         if session is None or session.status != "active":
             state.memory.purge()
-            sessions.pop(session_id, None)
+            # `drop`, KHÔNG phải `pop`: chỗ này từng là `dict` thuần, C-029 thay
+            # bằng `SessionStore`. Hai thẻ sửa cùng một hàm ở hai nhánh song
+            # song, và không test nào đi qua đây nên cả bộ vẫn xanh.
+            sessions.drop(session_id)
 
     def context_for(
         session_id: str, state: AgentSession, tracer: Tracer | None = None

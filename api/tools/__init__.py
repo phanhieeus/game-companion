@@ -14,6 +14,7 @@ from __future__ import annotations
 import random
 import string
 from datetime import datetime, timezone
+from typing import Callable
 
 from pydantic import ValidationError
 
@@ -218,11 +219,24 @@ def _apply_forward(round_: Round, item: TimelineItem) -> None:
 class Tools:
     """Hợp đồng ổn định — chữ ký giữ nguyên từ bản TypeScript."""
 
-    def __init__(self, repo: SessionRepository) -> None:
+    def __init__(
+        self,
+        repo: SessionRepository,
+        on_session_ended: Callable[[str], None] | None = None,
+    ) -> None:
         self.repo = repo
         # Khoá theo phiên, bọc quanh đọc-sửa-ghi (C-021). Không có nó thì hai
         # request cùng lúc trên một phiên làm mất ván của nhau.
         self.locks = SessionLocks()
+        #: Gọi khi một phiên vừa kết thúc — để tầng trên dọn trí nhớ của nó.
+        #:
+        #: Trí nhớ agent khoá theo phiên (C-027), nhưng tool layer không biết
+        #: kho nhớ tồn tại và cũng không nên biết. Móc này là chỗ DUY NHẤT cả
+        #: hai đường kết thúc phiên — tool của agent và `/end` gọi thẳng — cùng
+        #: đi qua, nên treo ở đây thì không đường nào lọt. Trước đó dọn ở route
+        #: agent, tức phiên kết thúc bằng nút "Kết thúc" rồi không nói gì nữa
+        #: sẽ để trí nhớ nằm lại vĩnh viễn.
+        self.on_session_ended = on_session_ended
 
     def _load(self, session_id: str, for_write: bool) -> Result[Session]:
         """Lấy phiên và chặn thao tác ghi lên phiên đã kết thúc."""
@@ -365,6 +379,10 @@ class Tools:
         session.status = "ended"
         session.endedAt = _now()
         self.repo.save(session)
+        if self.on_session_ended is not None:
+            # Dọn trí nhớ NGAY, không đợi lượt nói kế tiếp — phiên kết thúc rồi
+            # thì rất có thể không còn lượt nào nữa.
+            self.on_session_ended(session_id)
         return ok({"scoreboard": compute_scoreboard(session)})
 
     # ── Ván ──────────────────────────────────────────────────────────────
@@ -659,5 +677,8 @@ class Tools:
         return ok({"rounds": rounds[:limit] if limit else rounds})
 
 
-def create_tools(repo: SessionRepository) -> Tools:
-    return Tools(repo)
+def create_tools(
+    repo: SessionRepository,
+    on_session_ended: Callable[[str], None] | None = None,
+) -> Tools:
+    return Tools(repo, on_session_ended)

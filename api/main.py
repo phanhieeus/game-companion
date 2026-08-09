@@ -61,7 +61,19 @@ else:
     turn_store = FileTurnStore(DATA_DIR / "turns.json")
     print(f"[api] kho: file trong {DATA_DIR}", file=sys.stderr, flush=True)
 
-tools = create_tools(repo)
+def _quen_phien(session_id: str) -> None:
+    """Phiên kết thúc thì trí nhớ agent của nó đi theo (C-027).
+
+    Nối ở ĐÂY vì đây là chỗ duy nhất biết cả tool layer lẫn hai kho nhớ. Tool
+    layer cố tình không biết kho nhớ tồn tại; còn route agent thì chỉ chạy khi
+    người dùng NÓI, nên kết thúc phiên bằng nút rồi tắt app sẽ để trí nhớ nằm
+    lại vĩnh viễn.
+    """
+    fact_store.clear(session_id)
+    turn_store.clear(session_id)
+
+
+tools = create_tools(repo, _quen_phien)
 
 app = FastAPI(title="Ghi điểm", version="1.0.0")
 
@@ -141,6 +153,29 @@ if os.environ.get("E2E_RESET") == "1":
 # gọn và để cùng origin — khỏi CORS, khỏi cấu hình proxy.
 DIST = Path(__file__).resolve().parent.parent / "dist"
 
+# Đường `/api/*` không có thật thì trả 404 JSON — KHÔNG phụ thuộc `dist/`.
+#
+# Khai sau tất cả route API nên nó chỉ nhận những đường `/api/...` không tồn
+# tại. Trả HTML cho chúng là nói dối hai lần: client gọi nhầm endpoint nhận
+# 200 kèm HTML rồi chết lúc parse JSON, còn người dò `/api/admin/*` trên máy
+# chủ chưa bật quan sát lại thấy 200 như thể route có thật.
+#
+# Trước đây nhánh này nằm LỒNG trong `if DIST.is_dir()`, nên hình dạng lỗi của
+# API đổi theo việc frontend đã build hay chưa — và test canh nó đỏ trong mọi
+# cây làm việc chưa chạy `npm run build`. Ba agent gặp nó, hai người đoán đúng
+# nguyên nhân, một người đoán sai. Một thuộc tính của API không có lý do gì phụ
+# thuộc vào tài sản của frontend.
+@app.get("/api/{rest:path}", include_in_schema=False)
+def api_khong_co_that(rest: str):
+    return JSONResponse(
+        status_code=404,
+        content={
+            "error": {"code": "NOT_FOUND", "message": "Không có đường dẫn này."},
+            "retryable": False,
+        },
+    )
+
+
 if DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
 
@@ -149,23 +184,9 @@ if DIST.is_dir():
         """Mọi đường dẫn KHÔNG phải /api/* đều trả index.html.
 
         Đường dẫn sâu phải trả index.html chứ không phải 404: tải lại trang ở
-        bất kỳ đâu cũng phải mở được app.
-
-        Nhưng `/api/*` thì tuyệt đối không: route này khai sau tất cả route API
-        nên nó chỉ nhận những đường `/api/...` KHÔNG TỒN TẠI — và trả index.html
-        cho chúng là nói dối hai lần. Client gọi nhầm endpoint sẽ nhận HTML với
-        mã 200 rồi chết lúc parse JSON, còn người dò `/api/admin/*` trên máy chủ
-        chưa bật quan sát lại thấy 200 như thể route có thật.
+        bất kỳ đâu cũng phải mở được app. `/api/*` đã bị route ngay trên chặn
+        trước khi tới đây.
         """
-        if full_path.startswith("api/"):
-            return JSONResponse(
-                status_code=404,
-                content={
-                    "error": {"code": "NOT_FOUND", "message": "Không có đường dẫn này."},
-                    "retryable": False,
-                },
-            )
-
         candidate = DIST / full_path
         if full_path and candidate.is_file():
             return FileResponse(candidate)

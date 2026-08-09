@@ -45,4 +45,16 @@ Short. The most valuable section is what you are NOT doing and why.
   L-impact, đã cắt ở stage 02.
 - **Đồng bộ nhiều máy / xem chung thời gian thực** — grade C, không pain nào
   trong PRD cần tới.
-- **Đổi cách tính điểm (`rank` mode)** — vẫn ngoài phạm vi MVP theo decision 0002.
+- ~~**Đổi cách tính điểm (`rank` mode)**~~ — **ĐẢO NGƯỢC MỘT PHẦN 2026-08-09**
+  (C-030). Operator yêu cầu cấu hình luật nhà: bảng điểm theo hạng (nhất/nhì/
+  ba/bét) và thưởng theo sự kiện (ăn tứ quý), rồi agent tự suy ra delta từng
+  người khi nghe kết quả.
+
+  **`mode` VẪN là `direct`, decision 0002 chưa bị lật.** Engine không mọc thêm
+  chế độ tính điểm: `rankPoints` chỉ là bảng TRA CỨU để dịch "Nam nhất" thành
+  một con số, và con số đó đi tiếp qua đúng đường `record_round` cũ, vẫn lưu
+  delta từng người, vẫn qua cổng `zeroSum`. Cái được thêm là một lối NHẬP, không
+  phải một cách TÍNH.
+
+  Ghi lại ở đây vì câu cũ đọc lên sẽ khiến người sau tưởng luật nhà chưa có.
+  Giữ gạch ngang làm bản ghi, không xoá.

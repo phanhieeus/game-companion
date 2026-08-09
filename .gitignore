@@ -29,3 +29,6 @@ data/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Worktree tạm của agent — không bao giờ thuộc về lịch sử repo
+.claude/worktrees/
