@@ -104,6 +104,15 @@ def build_agent_router(
                     None,
                 ),
                 "zeroSum": session.scoringConfig.zeroSum,
+                # Luật nhà đi CÙNG prompt chứ không nằm trong trí nhớ dài hạn:
+                # nó là dữ liệu của phiên, đổi ở màn Cài đặt là lượt sau prompt
+                # phải khác ngay. `playerCount` đi kèm để prompt tự phát hiện
+                # được bảng hạng đã lệch số người sau khi thêm/bớt ai đó.
+                "rankPoints": session.scoringConfig.rankPoints,
+                "bonuses": [b.dump() for b in session.scoringConfig.bonuses],
+                "playerCount": len(
+                    [p for p in session.players if p.status == "active"]
+                ),
                 "roundsPlayed": len(
                     [r for r in session.rounds if r.status == "recorded"]
                 ),

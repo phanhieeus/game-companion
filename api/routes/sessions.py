@@ -180,6 +180,15 @@ def build_session_router(tools: Tools, repo: SessionRepository) -> APIRouter:
 
     @router.patch("/{session_id}/settings", **VIEW)
     def settings(session_id: str, body: dict = Body(default={})):
+        # Luật nhà đi CHUNG cửa với "xác nhận trước khi ghi": cả hai là tuỳ chọn
+        # của phiên, và cả hai phải đi qua tool layer để nói bằng lời với bấm
+        # tay chịu đúng một bộ kiểm.
+        if "scoring_config" in body:
+            result = tools.update_scoring_config(
+                session_id, body.get("scoring_config") or {}
+            )
+            return fail(result) if not result.ok else viewed(session_id)
+
         result = tools.set_confirm_before_commit(
             session_id, bool(body.get("confirm_before_commit"))
         )

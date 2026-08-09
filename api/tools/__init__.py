@@ -15,6 +15,8 @@ import random
 import string
 from datetime import datetime, timezone
 
+from pydantic import ValidationError
+
 from ..domain.errors import Result, err, ok
 from ..domain.models import (
     DEFAULT_SCORING_CONFIG,
@@ -25,6 +27,7 @@ from ..domain.models import (
     RoundEvent,
     RoundEventEntry,
     ScoreEntry,
+    ScoringConfig,
     Session,
 )
 from ..domain.scoring import (
@@ -38,6 +41,7 @@ from ..domain.scoring import (
     undo_depth_of,
     validate_player_count,
     validate_round_entries,
+    validate_scoring_config,
 )
 from ..guardrails import (
     SessionLocks,
@@ -80,6 +84,22 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace(
         "+00:00", "Z"
     )
+
+
+def _merged_config(base: ScoringConfig, patch: dict) -> Result[ScoringConfig]:
+    """Đắp một mẩu cấu hình lên cấu hình cũ, và KIỂM HÌNH DẠNG lại từ đầu.
+
+    `model_copy(update=…)` nhận thẳng bất cứ thứ gì gọi vào — đưa cho nó một
+    danh sách dict thì `bonuses` ở lại dạng dict, và chỗ đọc sẽ nổ mãi sau đó,
+    xa chỗ gây ra. Dựng lại bằng `model_validate` để sai hình dạng thì sai ngay
+    tại cửa, và mỗi phiên có danh sách của riêng nó.
+    """
+    try:
+        return ok(ScoringConfig.model_validate({**base.model_dump(), **patch}))
+    except ValidationError as error:
+        first = error.errors()[0]
+        where = ".".join(str(p) for p in first["loc"]) or "luật"
+        return err("SCORING_CONFIG_INVALID", f"Luật tính điểm sai ở '{where}'.")
 
 
 def _same_entries(a: list[RoundEventEntry], b: list[RoundEventEntry]) -> bool:
@@ -244,12 +264,17 @@ class Tools:
             needle = me_player_name.strip().lower()
             me = next((p for p in records if p.name.lower() == needle), None)
 
-        config = DEFAULT_SCORING_CONFIG.model_copy(update=scoring_config or {})
+        # `model_validate` chứ không `model_copy`: copy chỉ là copy NÔNG, nên
+        # mọi phiên sẽ dùng chung đúng một danh sách `bonuses` của hằng mặc
+        # định — sửa luật nhà ở phiên này là sửa luôn phiên khác.
+        config = _merged_config(DEFAULT_SCORING_CONFIG, scoring_config or {})
+        if not config.ok:
+            return config
         session = Session(
             id=session_id,
             name=name,
             status="active",
-            scoringConfig=config,
+            scoringConfig=config.unwrap(),
             players=records,
             rounds=[],
             createdAt=_now(),
@@ -309,8 +334,16 @@ class Tools:
             return loaded
         session = loaded.unwrap()
 
+        merged = _merged_config(session.scoringConfig, scoring_config)
+        if not merged.ok:
+            return merged
+
+        checked = validate_scoring_config(session, merged.unwrap())
+        if not checked.ok:
+            return checked
+
         # Ván đã ghi không hồi tố — xem docs/product/open-questions.md.
-        session.scoringConfig = session.scoringConfig.model_copy(update=scoring_config)
+        session.scoringConfig = checked.unwrap()
         self.repo.save(session)
         return ok({"ok": True})
 
